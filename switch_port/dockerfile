@@ -1,0 +1,16 @@
+# Base image for Nintendo Switch (AArch64 / libnx)
+FROM devkitpro/devkita64:latest
+
+# Update and install the dev packages you'll need
+RUN dkp-pacman -Syu --noconfirm \
+    switch-dev \
+    switch-sdl2 \
+    switch-zlib \
+    switch-libpng \
+    switch-libjpeg-turbo
+
+# Set working directory in the container
+WORKDIR /workspace
+
+# Default command
+CMD ["/bin/bash"]
