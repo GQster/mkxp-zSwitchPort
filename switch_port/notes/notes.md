@@ -166,31 +166,6 @@ Bottom line
 
 
 
-Work done so far: 
-
-1. Reference Projects & Strategy
-  Strategy: Use mkxp-z (Meson build system) + devkitPro toolchain.
-  Approach: Cross-compile all dependencies, link statically, and package as .nro.
-2. Accomplished Milestones
-  Docker Environment: Validated. All Switch libraries (sdl2, openal, etc.) installed.
-  Desktop Build: Validated. mkxp-z compiles on x86_64.
-  Build System: Created switch.ini for Meson cross-compilation.
-  Ruby 3.2 Cross-Compilation (COMPLETED):
-  Challenge: Ruby expects mmap, mprotect, and POSIX signals, which libnx lacks.
-  Solution: Created a custom build script (build_ruby_switch.sh) that:
-    Forces Switch compiler flags (-mtp=soft, -fPIE).
-    Injects a C-Shim mapping mmap -> calloc.
-    Disables signal-based Garbage Collection features (USE_SIGALTSTACK 0).
-    Result: A valid libruby-static.a is now located in libs/ruby-switch/lib.
-3. Immediate Next Steps (Current Challenge)
-Configure mkxp-z: Use Meson to generate the build files, ensuring it picks up our custom Ruby and the Switch libraries.
-Compile Engine: Run ninja to compile the C++ engine code.
-Link: Link the final .elf binary.
-
-
-
-
-
 
 
 
@@ -289,38 +264,8 @@ The project is ready to move into the **mkxp‑z Meson cross‑compile stage**
 
 
 
+clear && docker build -t switch-dev switch_port/. && xhost +local: && docker run -it --rm   -e DISPLAY=$DISPLAY   -v /tmp/.X11-unix:/tmp/.X11-unix   -v "$(pwd)":/workspace   switch-dev
 
-
-
-
-
-
-
-# Run in Docker
-
-
-# Allow Docker/X11 to show windows
-cd ~/projects/mkxp-zSwitchPort/
-# Run the dev image, mounting your repo directly
-xhost +local: && docker run -it --rm \
-  -e DISPLAY=$DISPLAY \
-  -v /tmp/.X11-unix:/tmp/.X11-unix \
-  -v "$(pwd)":/workspace \
-  switch-dev
-
-# one line cmd  of "
-docker build -t switch-dev switch_port/. && xhost +local: && docker run -it --rm   -e DISPLAY=$DISPLAY   -v /tmp/.X11-unix:/tmp/.X11-unix   -v "$(pwd)":/workspace   switch-dev
-
-# Inside Docker: build and run mkxp-z on Linux host
-rm -rf build-linux 
-LDFLAGS="-lxcb -lcairo -lXrender" meson setup build-linux --buildtype=release
-meson compile -C build-linux -j"$(nproc)"
-
-
-
-
-
-
-
-
-
+cd switch_port
+clear && rm -rf ../build-switch
+./build_mkxpz_switch.sh

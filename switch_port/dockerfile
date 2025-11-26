@@ -4,7 +4,13 @@
 # ──────────────────────────────────────────
 FROM devkitpro/devkita64:latest
 
-# ============== Switch‑side (cross‑compile) libs ==============
+# ⚡ CRITICAL: Add devkitA64 compilers to PATH
+ENV DEVKITPRO=/opt/devkitpro
+ENV DEVKITA64=/opt/devkitpro/devkitA64
+ENV PATH=${DEVKITA64}/bin:$PATH
+
+# 1. SWITCH LIBS (Official pacman packages)
+# Note: switch-libiconv and switch-pixman are intentionally removed (manual builds below)
 RUN dkp-pacman -Syu --noconfirm \
     switch-dev \
     switch-tools \
@@ -21,8 +27,8 @@ RUN dkp-pacman -Syu --noconfirm \
     switch-bzip2 \
     switch-libjson-c
 
-# ============== Desktop (x86_64) build deps =============
-# Make apt non-interactive and set locale
+# 2. HOST LIBS (x86_64 / Linux Desktop)
+# Required for building mkxp-z desktop version (Step 0)
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
 
@@ -35,7 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ninja-build \
     ca-certificates \
     wget \  
-    # Core Libraries
+    # Core Libraries (Host)
     libsdl2-dev \
     libsdl2-ttf-dev \
     libsdl2-image-dev \
@@ -54,8 +60,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libbz2-dev \
     libssl-dev \
     xxd \      
-    # mkxp-z specific deps
-    # libphysfs-dev REMOVED: We build this from source below
+    # mkxp-z specific deps (Host)
     libtheora-dev \
     libpixman-1-dev \
     libuchardet-dev \
@@ -80,7 +85,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # ──────────────────────────────────────────
-# Build & install PhysicsFS (Using tag release-3.2.0)
+# 3. MANUAL BUILD: PhysicsFS (Host/Linux)
+# ──────────────────────────────────────────
+# This installs PhysFS for the *container OS* (x86_64) to support desktop builds.
 RUN git clone --depth 1 --branch release-3.2.0 https://github.com/icculus/physfs.git /tmp/physfs \
  && cmake -S /tmp/physfs -B /tmp/physfs/build \
     -DCMAKE_BUILD_TYPE=Release \
@@ -94,19 +101,92 @@ RUN git clone --depth 1 --branch release-3.2.0 https://github.com/icculus/physfs
  && rm -rf /tmp/physfs
 
 # ──────────────────────────────────────────
-# Build & install GNU libiconv
-RUN wget https://ftp.gnu.org/pub/gnu/libiconv/libiconv-1.17.tar.gz -O /tmp/libiconv.tar.gz \
+# 4. MANUAL BUILD: Libiconv 1.16 (Switch) (we might not need this, looks like only Mac OSX uses it?)
+# ──────────────────────────────────────────
+RUN wget https://ftp.gnu.org/pub/gnu/libiconv/libiconv-1.16.tar.gz -O /tmp/libiconv.tar.gz \
  && mkdir -p /tmp/libiconv \
  && tar -xf /tmp/libiconv.tar.gz -C /tmp/libiconv --strip-components=1 \
  && cd /tmp/libiconv \
- && ./configure --prefix=/usr/local --enable-static --enable-shared \
- && make -j"$(nproc)" \
- && make install \
- && ldconfig \
+ \
+ # Patch to avoid mbrtowc redefinition conflict with Newlib
+ && sed -i '/extern size_t mbrtowc/d' lib/loop_wchar.h \
+ \
+ && ./configure \
+    --host=aarch64-none-elf \
+      --prefix=/opt/devkitpro/portlibs/switch \
+    --enable-static \
+    --disable-shared \
+      --disable-nls \
+      CFLAGS="-O3 -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE -D__SWITCH__" \
+      LDFLAGS="-specs=/opt/devkitpro/libnx/switch.specs" \
+ \
+ # Build libcharset first
+ && make -C libcharset -j"$(nproc)" \
+ \
+ # Install libcharset
+ && make -C libcharset install \
+ \
+ # ⚡ CRITICAL FIX: Copy header to BOTH locations where lib/ looks for it
+ && cp -v /opt/devkitpro/portlibs/switch/include/localcharset.h include/ \
+ && cp -v /opt/devkitpro/portlibs/switch/include/localcharset.h libcharset/include/ \
+ \
+ # Now build lib (it will find localcharset.h in libcharset/include/)
+ && make -C lib -j"$(nproc)" \
+ \
+ # Install lib
+ && make -C lib install \
+ \
+ # Copy main header manually
+ && cp include/iconv.h /opt/devkitpro/portlibs/switch/include/ \
+ \
  && rm -rf /tmp/libiconv /tmp/libiconv.tar.gz
 
 # ──────────────────────────────────────────
-# Build & install SDL2_sound (from official v2.0.1 release)
+# 5. MANUAL BUILD: Pixman 0.42.2 (Switch)
+# ──────────────────────────────────────────
+RUN wget https://cairographics.org/releases/pixman-0.42.2.tar.gz -O /tmp/pixman.tar.gz \
+ && mkdir -p /tmp/pixman \
+ && tar -xf /tmp/pixman.tar.gz -C /tmp/pixman --strip-components=1 \
+ && cd /tmp/pixman \
+ && ./configure \
+    --host=aarch64-none-elf \
+    --prefix=/opt/devkitpro/portlibs/switch \
+    --enable-static \
+    --disable-shared \
+    --disable-gtk \
+    --disable-libpng \
+    CFLAGS="-O3 -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE -D__SWITCH__" \
+    LDFLAGS="-specs=/opt/devkitpro/libnx/switch.specs" \
+ # Build ONLY the library (in pixman/ folder), skipping demos/test which fail
+ && make -j"$(nproc)" -C pixman \
+ && make -C pixman install \
+ && make install-pkgconfigDATA \
+ && rm -rf /tmp/pixman /tmp/pixman.tar.gz
+
+# ──────────────────────────────────────────
+# 6. MANUAL BUILD: Uchardet (Switch)
+# ──────────────────────────────────────────
+RUN git clone --depth 1 --branch v0.0.8 https://gitlab.freedesktop.org/uchardet/uchardet.git /tmp/uchardet \
+ && cmake -S /tmp/uchardet -B /tmp/uchardet/build \
+    -DCMAKE_SYSTEM_NAME=Generic \
+    -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+    -DCMAKE_C_COMPILER=aarch64-none-elf-gcc \
+    -DCMAKE_CXX_COMPILER=aarch64-none-elf-g++ \
+    -DCMAKE_AR=${DEVKITA64}/bin/aarch64-none-elf-gcc-ar \
+    -DCMAKE_RANLIB=${DEVKITA64}/bin/aarch64-none-elf-gcc-ranlib \
+    -DCMAKE_INSTALL_PREFIX=/opt/devkitpro/portlibs/switch \
+    -DCMAKE_FIND_ROOT_PATH=/opt/devkitpro/portlibs/switch \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DBUILD_BINARY=OFF \
+    -DCMAKE_C_FLAGS="-O3 -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE -D__SWITCH__" \
+    -DCMAKE_CXX_FLAGS="-O3 -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE -D__SWITCH__" \
+ && cmake --build /tmp/uchardet/build -j"$(nproc)" \
+ && cmake --install /tmp/uchardet/build \
+ && rm -rf /tmp/uchardet 
+
+ # ──────────────────────────────────────────
+# 7. MANUAL BUILD: SDL2_sound (Switch)
+# ──────────────────────────────────────────
 RUN git clone --depth 1 --branch v2.0.1 https://github.com/icculus/SDL_sound.git /tmp/SDL_sound \
  && cmake -S /tmp/SDL_sound -B /tmp/SDL_sound/build -DSDL2=ON -DCMAKE_BUILD_TYPE=Release \
  && cmake --build /tmp/SDL_sound/build -j"$(nproc)" \
@@ -115,16 +195,19 @@ RUN git clone --depth 1 --branch v2.0.1 https://github.com/icculus/SDL_sound.git
     && ldconfig \
     && rm -rf /tmp/SDL_sound 
 
+# ──────────────────────────────────────────
+# 8. Environment Configuration
+# ──────────────────────────────────────────
 # Provide a pkg-config file so Meson can find SDL2_sound
 RUN mkdir -p /usr/local/lib/pkgconfig && \
     printf "prefix=/usr/local\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include/SDL2\n\nName: SDL2_sound\nDescription: SDL2 sound library\nVersion: 2.0.1\nRequires: sdl2\nLibs: -L\${libdir} -lSDL2_sound\nCflags: -I\${includedir}\n" \
       > /usr/local/lib/pkgconfig/SDL2_sound.pc
 
-# Ensure pkg-config sees /usr/local AND system paths
+# Ensure pkg-config sees /usr/local AND system paths (for Desktop builds)
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
 ENV CMAKE_PREFIX_PATH=/usr/local
 
-# FORCE compiler to look in /usr/local/include/SDL2 for SDL_sound.h
+# FORCE compiler to look in /usr/local/include/SDL2 for SDL_sound.h (for Desktop)
 ENV CPATH=/usr/local/include/SDL2:/usr/local/include
 ENV LIBRARY_PATH=/usr/local/lib
 

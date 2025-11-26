@@ -69,7 +69,7 @@ if gfx_backend == 'gles'
     # Needs to be manually set up for now
     global_args += '-DGLES2_HEADER'
 elif gfx_backend == 'gl'
-    global_dependencies += dependency('gl')
+    global_dependencies += dependency('glesv2')
     # boop
 endif
 
@@ -129,6 +129,9 @@ if host_system == 'windows'
     subdir('windows')
     global_sources += windows_resources
     global_include_dirs += include_directories('windows')
+elif host_system == 'switch'
+    # Use our new Switch directory instead of linux/macos
+    subdir('switch')
 else
     subdir('linux')
     rpath = '$ORIGIN/lib'
