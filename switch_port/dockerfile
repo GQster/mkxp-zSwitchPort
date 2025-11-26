@@ -1,16 +1,132 @@
-# Base image for Nintendo Switch (AArch64 / libnx)
+# ──────────────────────────────────────────
+#  Nintendo Switch (libnx) cross‑build image
+#  + desktop (x86‑64) build tool‑chain
+# ──────────────────────────────────────────
 FROM devkitpro/devkita64:latest
 
-# Update and install the dev packages you'll need
+# ============== Switch‑side (cross‑compile) libs ==============
 RUN dkp-pacman -Syu --noconfirm \
     switch-dev \
+    switch-tools \
     switch-sdl2 \
+    switch-sdl2_image \
+    switch-sdl2_ttf \
+    switch-openal-soft \
+    switch-libogg \
+    switch-libvorbis \
     switch-zlib \
     switch-libpng \
-    switch-libjpeg-turbo
+    switch-libjpeg-turbo \
+    switch-freetype \
+    switch-bzip2 \
+    switch-libjson-c
 
-# Set working directory in the container
+# ============== Desktop (x86_64) build deps =============
+# Make apt non-interactive and set locale
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    cmake \
+    pkg-config \
+    meson \
+    ninja-build \
+    ca-certificates \
+    wget \  
+    # Core Libraries
+    libsdl2-dev \
+    libsdl2-ttf-dev \
+    libsdl2-image-dev \
+    libopenal-dev \
+    libogg-dev \   
+    libvorbis-dev \
+    libpng-dev \
+    libjpeg62-turbo-dev \
+    libjpeg-dev \
+    libglew-dev \
+    libgl1-mesa-dev \
+    libfreetype6-dev \
+    ruby-full \
+    ruby-dev \
+    zlib1g-dev \
+    libbz2-dev \
+    libssl-dev \
+    xxd \      
+    # mkxp-z specific deps
+    # libphysfs-dev REMOVED: We build this from source below
+    libtheora-dev \
+    libpixman-1-dev \
+    libuchardet-dev \
+    libjson-c-dev \
+    libexpat1-dev \
+    libcurl4-openssl-dev \
+    libffi-dev \
+    libfluidsynth-dev \
+    # Audio decoders for SDL_sound
+    libmodplug-dev \
+    libmpg123-dev \
+    libmp3lame-dev \
+    libflac-dev \
+    libopusfile-dev \
+    libwavpack-dev \
+    # Font shaping & Image formats
+    libharfbuzz-dev \
+    libgraphite2-dev \
+    libwebp-dev \
+    libtiff-dev \
+    libcairo2-dev \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# ──────────────────────────────────────────
+# Build & install PhysicsFS (Using tag release-3.2.0)
+RUN git clone --depth 1 --branch release-3.2.0 https://github.com/icculus/physfs.git /tmp/physfs \
+ && cmake -S /tmp/physfs -B /tmp/physfs/build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr/local \
+    -DPHYSFS_BUILD_SHARED=ON \
+    -DPHYSFS_BUILD_STATIC=ON \
+    -DPHYSFS_BUILD_TEST=OFF \
+ && cmake --build /tmp/physfs/build -j"$(nproc)" \
+ && cmake --install /tmp/physfs/build \
+ && ldconfig \
+ && rm -rf /tmp/physfs
+
+# ──────────────────────────────────────────
+# Build & install GNU libiconv
+RUN wget https://ftp.gnu.org/pub/gnu/libiconv/libiconv-1.17.tar.gz -O /tmp/libiconv.tar.gz \
+ && mkdir -p /tmp/libiconv \
+ && tar -xf /tmp/libiconv.tar.gz -C /tmp/libiconv --strip-components=1 \
+ && cd /tmp/libiconv \
+ && ./configure --prefix=/usr/local --enable-static --enable-shared \
+ && make -j"$(nproc)" \
+ && make install \
+ && ldconfig \
+ && rm -rf /tmp/libiconv /tmp/libiconv.tar.gz
+
+# ──────────────────────────────────────────
+# Build & install SDL2_sound (from official v2.0.1 release)
+RUN git clone --depth 1 --branch v2.0.1 https://github.com/icculus/SDL_sound.git /tmp/SDL_sound \
+ && cmake -S /tmp/SDL_sound -B /tmp/SDL_sound/build -DSDL2=ON -DCMAKE_BUILD_TYPE=Release \
+ && cmake --build /tmp/SDL_sound/build -j"$(nproc)" \
+ && cmake --install /tmp/SDL_sound/build \
+    && echo "/usr/local/lib" > /etc/ld.so.conf.d/local.conf \
+    && ldconfig \
+    && rm -rf /tmp/SDL_sound 
+
+# Provide a pkg-config file so Meson can find SDL2_sound
+RUN mkdir -p /usr/local/lib/pkgconfig && \
+    printf "prefix=/usr/local\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include/SDL2\n\nName: SDL2_sound\nDescription: SDL2 sound library\nVersion: 2.0.1\nRequires: sdl2\nLibs: -L\${libdir} -lSDL2_sound\nCflags: -I\${includedir}\n" \
+      > /usr/local/lib/pkgconfig/SDL2_sound.pc
+
+# Ensure pkg-config sees /usr/local AND system paths
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
+ENV CMAKE_PREFIX_PATH=/usr/local
+
+# FORCE compiler to look in /usr/local/include/SDL2 for SDL_sound.h
+ENV CPATH=/usr/local/include/SDL2:/usr/local/include
+ENV LIBRARY_PATH=/usr/local/lib
+
 WORKDIR /workspace
-
-# Default command
 CMD ["/bin/bash"]
