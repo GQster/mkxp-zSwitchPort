@@ -191,18 +191,19 @@ Bottom line
 
 | Area | Status | Notes |
 |------|---------|-------|
-| **Docker Environment** | ✅ Validated | devkitPro’s `libnx`, `portlibs`, and SDK toolchains installed. |
-| **Desktop Build** | ✅ Validated | mkxp‑z compiles and runs correctly on x86_64 Linux. |
-| **Cross‑Build System** | ✅ Created | `switch.ini` Meson cross file configured for `aarch64‑none‑elf` toolchain. |
-| **Ruby 3.2 Cross‑Compilation** | ✅ Completed | `build_ruby_switch.sh` builds static Ruby 3.2.2 (**`libruby‑static.a`**). |
-|  |  | • Injected **C shim** to emulate `mmap()` / `mprotect()` using `calloc`.<br>• Disabled **signal‑based GC** (`USE_SIGALTSTACK 0`).<br>• Produces fully static lib at `libs/ruby‑switch/lib/libruby‑static.a`. |
-| **PhysicsFS Build** | ✅ Completed | Cross‑compiled v3.2.0, patched for Switch POSIX mode (`PHYSFS_PLATFORM_UNIX`).<br>Output: `libs/physfs‑switch/lib/libphysfs.a`. |
-| **SDL_sound Build** | ✅ Completed | Cross‑compiled v2.0.1 with all examples removed.<br>Patched `sdl2.pc` to drop invalid `‑lEGL ‑lglapi ‑ldrm_nouveau`.<br>Output: `libs/SDL_sound‑switch/lib/libSDL2_sound.a`. |
-| **Automation** | ✅ Stable | `configure_mkxpz.sh` cleanly and reproducibly builds PhysFS + SDL_sound.<br>All intermediate issues (math libs, pkg‑config, dangling example targets) resolved. |
+| **Docker Environment** | ✅ **Complete** | • devkitA64 toolchain installed<br>• libnx SDK + portlibs configured<br>• Meson, ninja, pkg-config available |
+| **Desktop Build Validation** | ✅ **Complete** | • mkxp-z builds on x86_64 Linux<br>• Confirmed Meson build system works |
+| **Cross-Compilation Setup** | ✅ **Complete** | • `switch.ini` Meson cross-file created<br>• Toolchain: `aarch64-none-elf-gcc` (GCC 15.1.0)<br>• Flags: `-march=armv8-a -mtune=cortex-a57 -D__SWITCH__` |
+| **PhysFS Build** | ✅ **Complete** | • Version: 3.2.0<br>• Patched for Switch POSIX mode<br>• Output: `libs/physfs-switch/lib/libphysfs.a`<br>• Automated via `configure_mkxpz.sh` |
+| **SDL_sound Build** | ✅ **Complete** | • Version: 2.0.1<br>• Examples removed, static-only<br>• Patched `sdl2.pc` (removed invalid EGL libs)<br>• Output: `libs/SDL_sound-switch/lib/libSDL2_sound.a` |
+| **Ruby 3.2 Cross-Compilation** | 🔄 **85% Complete** | **✅ Working:**<br>• Configure with 50+ platform flags<br>• `switch_shim.h` created (mmap/mprotect emulation)<br>• `cont.c`, `io_buffer.c`, `file.c` patched<br><br>**🔴 Blocker:**<br>• `gc.c` signal handlers still compiling<br>• Targeting libnx (no POSIX signals)<br>• Current fix: `awk` wrapper to disable handlers |
 
 ---
 
 ## 3. Immediate Next Steps (Current Challenge)
+
+   ### The Problem
+   Ruby's garbage collector uses **POSIX signals** (`sigaction`, `siginfo_t`, `SA_SIGINFO`) for read barrier optimization. Nintendo Switch's libnx **does not support** POSIX signals at all.
 
 1. **Meson Integration – mkxp‑z**
    - Configure Meson using `switch.ini` to consume the newly built static libraries:  
