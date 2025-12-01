@@ -166,52 +166,63 @@ for F in cont.c io_buffer.c gc.c; do
     fi
 done
 
+# Patch io.c for setmode (Windows-only function)
+if [ -f io.c ]; then
+    echo "    → Patching io.c (disabling setmode)"
+    sed -i '1i#ifdef _WIN32' io.c
+    sed -i '2i#define HAVE_SETMODE 1' io.c
+    sed -i '3i#else' io.c
+    sed -i '4i#define setmode(fd, mode) ((void)0)' io.c
+    sed -i '5i#endif' io.c
+fi
+
+
 # file.c patch
 if [ -f file.c ]; then
     echo "    → Patching file.c"
     sed -i '1i#ifndef SHORT2NUM\n#define SHORT2NUM(x) INT2NUM((int)x)\n#endif' file.c
 fi
 
-# ✅ FINAL SOLUTION: Use awk to wrap entire signal handler block
-echo "    → Completely disabling signal handlers in gc.c..."
+# Disable signal handler functions with Python (more reliable than sed/awk)
+echo "    → Disabling signal handlers in gc.c..."
 
-awk '
-BEGIN { in_block = 0; skip_until_endif = 0 }
+python3 << 'PYTHON_EOF'
+import re
 
-# Detect start of signal handler platform block
-/^#if.*HAVE_WORKING_FORK/ {
-    print "#ifndef __SWITCH__  /* Signal handlers disabled for Switch */"
-    print "#if 0  /* Original signal code disabled */"
-    in_block = 1
-    skip_until_endif = 1
-    next
-}
+with open('gc.c', 'r') as f:
+    content = f.read()
 
-# Track #endif depth
-/^#endif/ && in_block {
-    print
-    if (skip_until_endif) {
-        skip_until_endif--
-        if (skip_until_endif == 0) {
-            print "#endif  /* __SWITCH__ */"
-            print ""
-            print "#ifdef __SWITCH__"
-            print "/* Stub implementations for Nintendo Switch */"
-            print "static void install_handlers(void) { /* no-op */ }"
-            print "static void uninstall_handlers(void) { /* no-op */ }"
-            print "#endif  /* __SWITCH__ */"
-            in_block = 0
-        }
-    }
-    next
-}
+# Wrap read_barrier_signal function
+content = re.sub(
+    r'(static void\s+read_barrier_signal\s*\([^)]*\)\s*\{(?:[^{}]|\{[^{}]*\})*\})',
+    r'#ifndef __SWITCH__\n\1\n#else\nstatic void read_barrier_signal(MAYBE_UNUSED(int sig), MAYBE_UNUSED(siginfo_t *info), MAYBE_UNUSED(void *ctx)) { /* no-op for Switch */ }\n#endif',
+    content,
+    flags=re.DOTALL
+)
 
-# Track nested #ifs
-/^#if/ && in_block { skip_until_endif++ }
+# Wrap install_handlers function
+content = re.sub(
+    r'(static void\s+install_handlers\s*\([^)]*\)\s*\{(?:[^{}]|\{[^{}]*\})*\})',
+    r'#ifndef __SWITCH__\n\1\n#else\nstatic void install_handlers(void) { /* no-op for Switch */ }\n#endif',
+    content,
+    flags=re.DOTALL
+)
 
-# Print all other lines
-{ print }
-' gc.c > gc.c.tmp && mv gc.c.tmp gc.c
+# Wrap uninstall_handlers function
+content = re.sub(
+    r'(static void\s+uninstall_handlers\s*\([^)]*\)\s*\{(?:[^{}]|\{[^{}]*\})*\})',
+    r'#ifndef __SWITCH__\n\1\n#else\nstatic void uninstall_handlers(void) { /* no-op for Switch */ }\n#endif',
+    content,
+    flags=re.DOTALL
+)
+
+with open('gc.c', 'w') as f:
+    f.write(content)
+
+print("    ✓ Signal handlers wrapped with #ifndef __SWITCH__")
+PYTHON_EOF
+
+
 
 echo "    ✓ All patches applied"
 
