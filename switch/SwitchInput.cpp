@@ -1,3 +1,4 @@
 #ifdef __SWITCH__
-// Stub - SDL2 handles input
+// TODO: real Switch input mapping if needed.
+// For now, rely on SDL2’s input handling.
 #endif

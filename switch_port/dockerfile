@@ -117,7 +117,7 @@ RUN wget https://ftp.gnu.org/pub/gnu/libiconv/libiconv-1.16.tar.gz -O /tmp/libic
     --enable-static \
     --disable-shared \
       --disable-nls \
-      CFLAGS="-O3 -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE -D__SWITCH__" \
+      CFLAGS="-O3 -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIC -D__SWITCH__" \
       LDFLAGS="-specs=/opt/devkitpro/libnx/switch.specs" \
  \
  # Build libcharset first
@@ -155,7 +155,7 @@ RUN wget https://cairographics.org/releases/pixman-0.42.2.tar.gz -O /tmp/pixman.
     --disable-shared \
     --disable-gtk \
     --disable-libpng \
-    CFLAGS="-O3 -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE -D__SWITCH__" \
+    CFLAGS="-O3 -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIC -D__SWITCH__" \
     LDFLAGS="-specs=/opt/devkitpro/libnx/switch.specs" \
  # Build ONLY the library (in pixman/ folder), skipping demos/test which fail
  && make -j"$(nproc)" -C pixman \
@@ -178,8 +178,8 @@ RUN git clone --depth 1 --branch v0.0.8 https://gitlab.freedesktop.org/uchardet/
     -DCMAKE_FIND_ROOT_PATH=/opt/devkitpro/portlibs/switch \
     -DBUILD_SHARED_LIBS=OFF \
     -DBUILD_BINARY=OFF \
-    -DCMAKE_C_FLAGS="-O3 -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE -D__SWITCH__" \
-    -DCMAKE_CXX_FLAGS="-O3 -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE -D__SWITCH__" \
+    -DCMAKE_C_FLAGS="-O3 -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIC -D__SWITCH__" \
+    -DCMAKE_CXX_FLAGS="-O3 -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIC -D__SWITCH__" \
  && cmake --build /tmp/uchardet/build -j"$(nproc)" \
  && cmake --install /tmp/uchardet/build \
  && rm -rf /tmp/uchardet 

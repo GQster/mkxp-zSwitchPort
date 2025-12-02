@@ -1,3 +1,4 @@
 #ifdef __SWITCH__
-// Stub - default filesystem works
+// TODO: real Switch filesystem implementation.
+// For now, use mkxp-z’s existing filesystem logic.
 #endif

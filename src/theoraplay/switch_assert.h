@@ -1,9 +1,7 @@
 #ifndef SWITCH_ASSERT_H
 #define SWITCH_ASSERT_H
-
 #ifdef __SWITCH__
 #include <assert.h>
-// If assert isn't defined as a macro, define it
 #ifndef assert
 #ifdef NDEBUG
 #define assert(x) ((void)0)
@@ -13,5 +11,4 @@ extern void __assert_func(const char *, int, const char *, const char *);
 #endif
 #endif
 #endif
-
 #endif

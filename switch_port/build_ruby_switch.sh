@@ -42,16 +42,15 @@ tar -xf ruby-${RUBY_VER}.tar.gz
 cd ${RUBY_SRC}
 
 # 4. Toolchain
-SPECS="/opt/devkitpro/libnx/switch.specs"
-FLAGS="-march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE -D__SWITCH__ -O2"
+# SPECS="/opt/devkitpro/libnx/switch.specs"
+FLAGS="-march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIC -fno-plt -D__SWITCH__ -O2"
 INCS="-I${DEVKITPRO}/libnx/include -I${DEVKITPRO}/portlibs/switch/include"
-LIBS_PATH="-L${DEVKITPRO}/libnx/lib -L${DEVKITPRO}/portlibs/switch/lib"
 
 export PATH=${DEVKITARM}/bin:$PATH
 
-# Embed flags into CC so 'configure' can't ignore them
-export CC="aarch64-none-elf-gcc -specs=${SPECS} ${FLAGS} ${INCS} ${LIBS_PATH}"
-export CXX="aarch64-none-elf-g++ -specs=${SPECS} ${FLAGS} ${INCS} ${LIBS_PATH}"
+# NO -specs here! specs is only for final executable linking
+export CC="aarch64-none-elf-gcc ${FLAGS} ${INCS}"
+export CXX="aarch64-none-elf-g++ ${FLAGS} ${INCS}"
 export AR=aarch64-none-elf-gcc-ar
 export RANLIB=aarch64-none-elf-gcc-ranlib
 export LD=aarch64-none-elf-ld
@@ -59,8 +58,7 @@ export LD=aarch64-none-elf-ld
 # Clear CFLAGS/LDFLAGS so they don't conflict with our CC definition
 export CFLAGS=""
 export CXXFLAGS=""
-export LDFLAGS="" 
-# Force linking against libnx
+export LDFLAGS="-L${DEVKITPRO}/libnx/lib -L${DEVKITPRO}/portlibs/switch/lib"
 export LIBS="-lnx"
 
 # 5. Configure
@@ -100,6 +98,45 @@ cat > switch_shim.h <<'EOF'
 #ifdef __SWITCH__
 #include <stdlib.h>
 #include <stddef.h>
+#include <sys/time.h>
+
+/* Poll constants and structures */
+#define POLLIN     0x0001
+#define POLLOUT    0x0004
+#define POLLERR    0x0008
+#define POLLHUP    0x0010
+#define POLLNVAL   0x0020
+
+typedef unsigned int nfds_t;
+
+struct pollfd {
+    int   fd;
+    short events;
+    short revents;
+};
+
+/* Poll stub - just sleep for timeout */
+static inline int poll(struct pollfd *fds, nfds_t nfds, int timeout) {
+    (void)fds;
+    (void)nfds;
+    if (timeout > 0) {
+        struct timeval tv;
+        tv.tv_sec = timeout / 1000;
+        tv.tv_usec = (timeout % 1000) * 1000;
+        select(0, NULL, NULL, NULL, &tv);
+    }
+    return 0;
+}
+
+static inline int ppoll(struct pollfd *fds, nfds_t nfds, 
+                        const struct timespec *timeout, const void *sigmask) {
+    (void)sigmask;
+    int timeout_ms = -1;
+    if (timeout) {
+        timeout_ms = timeout->tv_sec * 1000 + timeout->tv_nsec / 1000000;
+    }
+    return poll(fds, nfds, timeout_ms);
+}
 
 /* mmap/mprotect constants */
 #ifndef MAP_FAILED
@@ -205,7 +242,7 @@ EOF
 echo "    → Created switch_shim.h"
 
 # Apply shim to all files that need it
-for F in cont.c io_buffer.c gc.c vm.c addr2line.c; do
+for F in cont.c io_buffer.c gc.c vm.c addr2line.c thread.c thread_pthread.c; do
     if [ -f "$F" ]; then
         echo "    → Patching $F (adding shim)"
         sed -i '1i#include "switch_shim.h"' "$F"
@@ -224,14 +261,14 @@ if [ -f io.c ]; then
     sed -i '5i#endif' io.c
 fi
 
-# Patch thread.c and thread_pthread.c for signal functions
-if [ -f thread.c ]; then
-    echo "    → Patching thread.c (disabling posix_signal)"
-    # Stub out posix_signal for Switch
-    sed -i '1i#ifdef __SWITCH__' thread.c
-    sed -i '2i#define posix_signal(sig, func) ((void)0)' thread.c
-    sed -i '3i#endif' thread.c
-fi
+# # Patch thread.c and thread_pthread.c for signal functions
+# if [ -f thread.c ]; then
+#     echo "    → Patching thread.c (disabling posix_signal)"
+#     # Stub out posix_signal for Switch
+#     sed -i '1i#ifdef __SWITCH__' thread.c
+#     sed -i '2i#define posix_signal(sig, func) ((void)0)' thread.c
+#     sed -i '3i#endif' thread.c
+# fi
 
 if [ -f thread_pthread.c ]; then
     echo "    → Patching thread_pthread.c (disabling posix_signal)"
@@ -258,7 +295,6 @@ MJIT_EOF
     sed -i '1i#include "mjit_switch_stub.h"' mjit.c
     sed -i 's|#include <dlfcn.h>|#ifndef __SWITCH__\n#include <dlfcn.h>\n#endif|g' mjit.c
 fi
-
 
 # file.c patch
 if [ -f file.c ]; then
@@ -304,7 +340,6 @@ with open('gc.c', 'w') as f:
 
 print("    ✓ Signal handlers wrapped with #ifndef __SWITCH__")
 PYTHON_EOF
-
 
 
 echo "    ✓ All patches applied"

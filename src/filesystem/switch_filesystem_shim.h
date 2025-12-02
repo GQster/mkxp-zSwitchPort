@@ -1,11 +1,8 @@
 #ifndef SWITCH_FILESYSTEM_SHIM_H
 #define SWITCH_FILESYSTEM_SHIM_H
-
 #ifdef __SWITCH__
 #include <sys/stat.h>
 #include <errno.h>
-
-/* AT_* constants */
 #ifndef AT_FDCWD
 #define AT_FDCWD (-100)
 #endif

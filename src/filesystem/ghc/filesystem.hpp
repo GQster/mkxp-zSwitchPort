@@ -1988,7 +1988,155 @@ GHC_INLINE std::string systemErrorText(ErrorNumber code = 0)
 #ifdef __SWITCH__
     return std::string(strerror(code ? code : errno));
 #else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
+#ifdef __SWITCH__
+    return std::string(strerror(code ? code : errno));
+#else
     return strerror_adapter(strerror_r(code ? code : errno, buffer, sizeof(buffer)), buffer);
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
 #endif
 #endif
 #endif

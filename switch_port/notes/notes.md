@@ -196,78 +196,110 @@ Bottom line
 | **Cross-Compilation Setup** | ✅ **Complete** | • `switch.ini` Meson cross-file created<br>• Toolchain: `aarch64-none-elf-gcc` (GCC 15.1.0)<br>• Flags: `-march=armv8-a -mtune=cortex-a57 -D__SWITCH__` |
 | **PhysFS Build** | ✅ **Complete** | • Version: 3.2.0<br>• Patched for Switch POSIX mode<br>• Output: `libs/physfs-switch/lib/libphysfs.a`<br>• Automated via `configure_mkxpz.sh` |
 | **SDL_sound Build** | ✅ **Complete** | • Version: 2.0.1<br>• Examples removed, static-only<br>• Patched `sdl2.pc` (removed invalid EGL libs)<br>• Output: `libs/SDL_sound-switch/lib/libSDL2_sound.a` |
-| **Ruby 3.2 Cross-Compilation** | 🔄 **Complete** | switch_port/build_ruby_switch.sh| might be some issues still
----
-
-## 3. Immediate Next Steps (Current Challenge)
-
-   ### The Problem
-   Ruby's garbage collector uses **POSIX signals** (`sigaction`, `siginfo_t`, `SA_SIGINFO`) for read barrier optimization. Nintendo Switch's libnx **does not support** POSIX signals at all.
-
-1. **Meson Integration – mkxp‑z**
-   - Configure Meson using `switch.ini` to consume the newly built static libraries:  
-     - `libruby‑static.a`  
-     - `libphysfs.a`  
-     - `libSDL2_sound.a`
-   - Override or wrap Meson dependency lookups to point at these libs and their include paths.
-
-2. **Compile Engine**
-   - Run `meson compile -C build‑switch` (or `ninja ‑C build‑switch`) to generate the main `mkxp‑z.elf`.
-
-3. **Link & Package**
-   - Convert `.elf → .nro` using `elf2nro` with Switch metadata (`nacptool`).  
-   - Deploy to `/switch/mkxp‑z/` on SD card for testing.
-
----
-
-✅ **Current State:**  
-_All dependency builds (Ruby, PhysFS, SDL_sound) are complete and verified._  
-The project is ready to move into the **mkxp‑z Meson cross‑compile stage** and integrate the engine‑specific Switch platform layer.d.<br>Patched `sdl2.pc` to drop invalid `‑lEGL ‑lglapi ‑ldrm_nouveau`.<br>Output: `libs/SDL_sound‑switch/lib/libSDL2_sound.a`. |
-| **Automation** | ✅ Stable | `configure_mkxpz.sh` cleanly and reproducibly builds PhysFS + SDL_sound.<br>All intermediate issues (math libs, pkg‑config, dangling example targets) resolved. |
+| **Ruby 3.2 Cross-Compilation** | 🔄 **Complete** | switch_port/build_ruby_switch.sh| 
+| **mkxp‑z Switch Build** | ✅ **Complete** | • `switch_port/build_mkxpz_switch.sh` fully automates:<br>  – All patch operations for filesystem, asserts, and net stubs<br>  – Meson + Ninja cross‑build producing `build-switch/mkxp-z`<br>  – `.nacp` metadata and `.nro` packaging<br>• Output: `build-switch/mkxp-z.nro` runs in Flatpak Ryujinx ✔ |
+| **Emulator Verification** | ✅ **Complete** | • HelloWorld NRO and mkxp‑z NRO load in Ryujinx (firmware 21.0.0)<br>• Proper NACP inclusion prevents LibHac crash<br>• Logs stream to `sdmc:/hello_log.txt` and `sdmc:/mkxpz_log.txt` |
+| **On‑Device Testing Prep** | ⚙️ **In Progress** | • mkxp‑z NRO packaged for `/switch/mkxp-z/`<br>• Ready to deploy to real Switch via hbmenu for first run tests |
 
 ---
 
 ## 3. Immediate Next Steps (Current Challenge)
-
-1. **Meson Integration – mkxp‑z**
-   - Configure Meson using `switch.ini` to consume the newly built static libraries:  
-     - `libruby‑static.a`  
-     - `libphysfs.a`  
-     - `libSDL2_sound.a`
-   - Override or wrap Meson dependency lookups to point at these libs and their include paths.
-
-2. **Compile Engine**
-   - Run `meson compile -C build‑switch` (or `ninja ‑C build‑switch`) to generate the main `mkxp‑z.elf`.
-
-3. **Link & Package**
-   - Convert `.elf → .nro` using `elf2nro` with Switch metadata (`nacptool`).  
-   - Deploy to `/switch/mkxp‑z/` on SD card for testing.
-
----
-
 ✅ **Current State:**  
-_All dependency builds (Ruby, PhysFS, SDL_sound) are complete and verified._  
-The project is ready to move into the **mkxp‑z Meson cross‑compile stage** and integrate the engine‑specific Switch platform layer.
+The complete mkxp‑z Switch build now produces a valid `.nro` with embedded NACP metadata.  
+having issues with the nro running on the switch. attempting to debug in the emulator first
+- **Filesystem Layer**
+  - Replace placeholder:
+    ```cpp
+    // TODO: real Switch filesystem implementation.
+    // For now, use mkxp‑z’s existing filesystem logic.
+    ```
+  - Implement proper search order:
+    ```
+    1. sdmc:/switch/mkxp-z/games/<GameFolder>/
+    2. romfs:/
+    ```
+  - Confirm PhysFS mounts and relative paths work under both emu + hardware.
+
+- **Input Layer**
+  - Replace stubbed comment:
+    ```cpp
+    // TODO: real Switch input mapping if needed.
+    // For now, rely on SDL2’s input handling.
+    ```
+  - Implement Joy‑Con‑to‑RGSS key mapping (`A→C`, `B→B`, `Plus→F12`, etc.) consistent with EasyRPG mapping.
+
+   - The crash is now very clear from the addr2line output:
+      switch error code: 2168-0002 (0x4a8)
+
+      crash log:
+      text
+      0x1173d0 -> libnx time.c:63
+      0x117268 -> libnx time.c:192
+      0x00ac   -> libnx runtime/devices/socket.c:948
+      So the fault is:
+
+      In libnx’s time service code, called from
+      libnx’s socket device code, which matches our use of socketInitializeDefault().
+      And since we never see any of your prints, the crash is happening during that early socket/time init, before we reach your own logging.
+
+      Given that, the simplest next step is:
+      Stop calling socketInitializeDefault() (and nxlinkStdio()) for now and see if mkxp‑z runs without crashing.
+
+   - stubbed: switch/switch_time_stub.c   
 
 
 
+### 🧩 Resolved Issues
+
+- **libnx socket/time crash (2168‑0002 0x4a8)**
+  - Crash traced via `addr2line` to `libnx time.c` during early `socketInitializeDefault()`.
+  - Cause: sockets/time services unavailable in homebrew context.
+  - **Fix:** removed `socketInitializeDefault()` and `nxlinkStdio()`. Launch now stable.
+
+- **Ryujinx “Loading as homebrew” hang**
+  - Cause: missing NACP section in generated `.nro`.
+  - **Fix:** added explicit `nacptool` → `elf2nro --nacp=...` step in build.
+  - Result: `.nro` loads instantly with metadata recognized (`Hello World (mkxp‑z test)`).
+
+- **Repeated patching of `httplib.h`**
+  - Issue: non‑idempotent build patch duplicated `#ifndef __SWITCH__` blocks.
+  - **Fix:** introduced sentinel `// SWITCH_HTTPLIB_PATCH` and guarded patch block—stable for multiple runs.
+
+# cmds:
+
+   clear && docker build -t switch-dev switch_port/. && xhost +local: && docker run -it --rm   -e DISPLAY=$DISPLAY   -v /tmp/.X11-unix:/tmp/.X11-unix   -v "$(pwd)":/workspace   switch-dev
 
 
+# Clean start:
+
+   cd /workspace
+
+   ### 1) Ruby: make sure we’re using the new -fPIC build
+   clear && rm -rf ruby-3.2.2 libs/ruby-switch && switch_port/build_ruby_switch.sh
+
+   ### 2) PhysFS + SDL_sound with -fPIC
+   rm -rf physfs-src physfs-build libs/physfs-switch
+   rm -rf SDL_sound-src SDL_sound-build libs/SDL_sound-switch
+   switch_port/configure_mkxpz.sh
+
+   ### 3) mkxp-z itself
+   clear && rm -rf build-switch &&switch_port/build_mkxpz_switch.sh
 
 
+# Finding the log like issue: 
+EX: 
+```
+ log
+      FP:                      000000534fd41fe0
+      LR:                      0000005978142c38 (mkxp-z + 0x114c38)
+      SP:                      000000534fd41fe0
+      PC:                      0000005978142da0 (mkxp-z + 0x114da0)
+    Stack Trace:
+      ReturnAddress[00]:       000000597802e0ac (mkxp-z + 0xac)
+      ReturnAddress[01]:       0000001c4c96b05c
+      ReturnAddress[02]:       0000001751011c90
 
+  CMD:
+   aarch64-none-elf-addr2line -f -C -e build-switch/mkxp-z 0x114da0 0x114c38 0xac
+```
 
-
-
-
-
-
-
-
-clear && docker build -t switch-dev switch_port/. && xhost +local: && docker run -it --rm   -e DISPLAY=$DISPLAY   -v /tmp/.X11-unix:/tmp/.X11-unix   -v "$(pwd)":/workspace   switch-dev
-
-cd switch_port
-clear && rm -rf ../build-switch
-./configure_mkxpz.sh
-./build_ruby_switch.sh
-./build_mkxpz_switch.sh

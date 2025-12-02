@@ -23,7 +23,6 @@ CROSS_FILE=${ROOT}/switch_port/switch.ini
 
 # ──────────────────────────────────────────────────────────────
 # CRITICAL: Force pkg-config to ONLY use Switch libraries
-# This prevents contamination from system x86_64 libraries
 # ──────────────────────────────────────────────────────────────
 export PKG_CONFIG_LIBDIR=/opt/devkitpro/portlibs/switch/lib/pkgconfig:/opt/devkitpro/libnx/lib/pkgconfig
 export PKG_CONFIG_PATH=
@@ -64,7 +63,7 @@ echo ""
 # ──────────────────────────────────────────────────────────────
 if [ -d "${BUILD}" ]; then
     echo "🧹 Cleaning previous build directory..."
-    rm -rf "${BUILD}" 2>/dev/null || echo "  ⚠️  Some files couldn't be removed (may need sudo), continuing..."
+    rm -rf "${BUILD}" 2>/dev/null || echo "  ⚠️  Some files couldn't be removed, continuing..."
 fi
 if [ -d "${ROOT}/switch" ]; then
     rm -rf "${ROOT}/switch" 2>/dev/null || echo "  ⚠️  Some switch files couldn't be removed, continuing..."
@@ -98,8 +97,7 @@ EOF
     echo "  ✓ Patched eventthread.cpp for strdup"
 fi
 
-
-# Create universal assert compatibility header for Switch
+# Create universal assert compatibility header
 cat > "${ROOT}/src/switch_assert_compat.h" << 'EOF'
 #ifndef SWITCH_ASSERT_COMPAT_H
 #define SWITCH_ASSERT_COMPAT_H
@@ -133,74 +131,48 @@ for file in src/audio/al-util.h src/audio/audiostream.cpp src/audio/midisource.c
     fi
 done
 
-echo "  ✓ Added Switch assert compatibility header"
-
-# ──────────────────────────────────────────────────────────────
-# Fix assert macro issues for additional problematic files
-# ──────────────────────────────────────────────────────────────
-echo "🔧 Fixing assert macro issues in additional files..."
-
 # Fix config.cpp
 if ! grep -q "<cassert>" "${ROOT}/src/config.cpp"; then
     sed -i '/#include "system\/system.h"/a #include <cassert>' "${ROOT}/src/config.cpp"
-    echo "  ✓ Fixed assert in config.cpp"
 fi
 
-# Fix keybindings.h - needs special handling
-if [ -f "${ROOT}/src/input/keybindings.h" ]; then
-    # Replace assert.h with cassert
+# Fix keybindings.h
+if [ -f "${ROOT}/src/input/keybindings.h" ] && ! grep -q "cassert" "${ROOT}/src/input/keybindings.h"; then
     sed -i 's/#include <assert\.h>/#include <cassert>/' "${ROOT}/src/input/keybindings.h" 2>/dev/null || true
-    # If no assert include exists, add cassert after input.h
-    if ! grep -q "cassert" "${ROOT}/src/input/keybindings.h"; then
-        sed -i '/#include "input.h"/a #include <cassert>' "${ROOT}/src/input/keybindings.h"
-    fi
-    echo "  ✓ Fixed assert in keybindings.h"
+    sed -i '/#include "input.h"/a #include <cassert>' "${ROOT}/src/input/keybindings.h"
 fi
 
 # Fix global-ibo.h
 if [ -f "${ROOT}/src/display/gl/global-ibo.h" ] && ! grep -q "<cassert>" "${ROOT}/src/display/gl/global-ibo.h"; then
-    # Add after the header guard
     sed -i '/#define GLOBAL_IBO_H/a \n#include <cassert>' "${ROOT}/src/display/gl/global-ibo.h"
-    echo "  ✓ Fixed assert in global-ibo.h"
 fi
 
 # Fix glstate.h
 if [ -f "${ROOT}/src/display/gl/glstate.h" ]; then
-    # Replace assert.h with cassert
     sed -i 's/#include <assert\.h>/#include <cassert>/' "${ROOT}/src/display/gl/glstate.h"
-    echo "  ✓ Fixed assert in glstate.h"
 fi
 
 # Fix bitmap.cpp
 if [ -f "${ROOT}/src/display/bitmap.cpp" ] && ! grep -q "<cassert>" "${ROOT}/src/display/bitmap.cpp"; then
-    # Add after the last include before the closing brace
     sed -i '/^#include "libnsgif\/libnsgif.h"/a #include <cassert>' "${ROOT}/src/display/bitmap.cpp"
-    echo "  ✓ Fixed assert in bitmap.cpp"
 fi
 
-# Fix sharedstate.cpp by ensuring cassert is included early
+# Fix sharedstate.cpp
 if [ -f "${ROOT}/src/sharedstate.cpp" ] && ! grep -q "<cassert>" "${ROOT}/src/sharedstate.cpp"; then
     sed -i '1i#include <cassert>' "${ROOT}/src/sharedstate.cpp"
-    echo "  ✓ Fixed assert in sharedstate.cpp"
 fi
 
 # Fix eventthread.cpp assert issues
 if [ -f "${ROOT}/src/eventthread.cpp" ] && ! grep -q "<cassert>" "${ROOT}/src/eventthread.cpp"; then
     sed -i '/#include "switch_compat.h"/a #include <cassert>' "${ROOT}/src/eventthread.cpp"
-    echo "  ✓ Fixed assert in eventthread.cpp"
 fi
 
-echo ""
-
-# For Switch, we need to ensure assert macro is properly defined
-# Create a switch-specific assert wrapper
+# Theoraplay assert
 cat > "${ROOT}/src/theoraplay/switch_assert.h" << 'EOF'
 #ifndef SWITCH_ASSERT_H
 #define SWITCH_ASSERT_H
-
 #ifdef __SWITCH__
 #include <assert.h>
-// If assert isn't defined as a macro, define it
 #ifndef assert
 #ifdef NDEBUG
 #define assert(x) ((void)0)
@@ -210,59 +182,56 @@ extern void __assert_func(const char *, int, const char *, const char *);
 #endif
 #endif
 #endif
-
 #endif
 EOF
 
 # Add include to theoraplay.c if not already there
 if ! grep -q "switch_assert.h" "${ROOT}/src/theoraplay/theoraplay.c"; then
     sed -i '17a#include "switch_assert.h"' "${ROOT}/src/theoraplay/theoraplay.c"
-    echo "  ✓ Added Switch assert wrapper"
 fi
 
-echo ""
-
-# ──────────────────────────────────────────────────────────────
-# Patch httplib.h for Switch (wrap unavailable POSIX headers)
-# ──────────────────────────────────────────────────────────────
+# Patch httplib.h (idempotent)
 HTTPLIB="${ROOT}/src/net/httplib.h"
 
-if ! grep -q "__SWITCH__.*sys/un.h" "${HTTPLIB}"; then
-    echo "🔧 Patching httplib.h for Switch compatibility..."
-    
-    # Create backup
+# Only patch once: look for a sentinel comment we add ourselves
+if ! grep -q "SWITCH_HTTPLIB_PATCH" "${HTTPLIB}"; then
+    echo "🔧 Patching httplib.h for Switch..."
+
     cp "${HTTPLIB}" "${HTTPLIB}.bak"
-    
-    # Apply patches with awk
     awk '
+    BEGIN {
+        sentinel = "// SWITCH_HTTPLIB_PATCH";
+    }
+
     /^#include <sys\/un\.h>/ {
-        print "#ifndef __SWITCH__"
-        print $0
-        print "#endif"
-        next
+        print sentinel;
+        print "#ifndef __SWITCH__";
+        print $0;
+        print "#endif";
+        next;
     }
-    
+
     /^#include <sys\/mman\.h>/ {
-        print "#ifndef __SWITCH__"
-        print $0
-        print "#endif"
-        next
+        print sentinel;
+        print "#ifndef __SWITCH__";
+        print $0;
+        print "#endif";
+        next;
     }
-    
+
     /^#include <ifaddrs\.h>/ {
-        print "#ifndef __SWITCH__"
-        print $0
-        print "#endif"
-        next
+        print sentinel;
+        print "#ifndef __SWITCH__";
+        print $0;
+        print "#endif";
+        next;
     }
-    
+
     { print }
     ' "${HTTPLIB}.bak" > "${HTTPLIB}"
-    
     rm "${HTTPLIB}.bak"
-    echo "  ✓ Wrapped sys/un.h, sys/mman.h, ifaddrs.h"
-else
-    echo "  ℹ httplib.h already patched for Switch"
+
+    echo "  ✓ Wrapped problematic headers in httplib.h"
 fi
 
 echo ""
@@ -287,8 +256,7 @@ if ! grep -q "GHC_OS_SWITCH" "${ROOT}/src/filesystem/ghc/filesystem.hpp"; then
 .
 wq
 EXEOF
-    
-    echo "  ✓ Added Switch OS detection"
+    echo "  ✓ Added Switch OS detection to filesystem.hpp"
 fi
 
 # Also stub out missing POSIX functions for Switch
@@ -299,12 +267,9 @@ if [ ! -f "${ROOT}/src/filesystem/switch_filesystem_shim.h" ]; then
     cat > "${ROOT}/src/filesystem/switch_filesystem_shim.h" << 'EOF'
 #ifndef SWITCH_FILESYSTEM_SHIM_H
 #define SWITCH_FILESYSTEM_SHIM_H
-
 #ifdef __SWITCH__
 #include <sys/stat.h>
 #include <errno.h>
-
-/* AT_* constants */
 #ifndef AT_FDCWD
 #define AT_FDCWD (-100)
 #endif
@@ -347,22 +312,22 @@ fi
 # Ensure the include line is there
 if ! grep -q "switch_filesystem_shim" "${ROOT}/src/filesystem/filesystemImpl.cpp"; then
     sed -i '1i#include "switch_filesystem_shim.h"' "${ROOT}/src/filesystem/filesystemImpl.cpp"
-    echo "  ✓ Added Switch filesystem shims"
 fi
 
-echo ""
+# Patch ghc/filesystem.hpp strerror_r (Switch wrapper)
+FS_GHC="${ROOT}/src/filesystem/ghc/filesystem.hpp"
 
-# ──────────────────────────────────────────────────────────────
-# Patch ghc/filesystem.hpp strerror_r (direct sed approach)
-# ──────────────────────────────────────────────────────────────
-if ! grep -q "ifdef __SWITCH__" "${ROOT}/src/filesystem/ghc/filesystem.hpp" | grep -q "strerror"; then
+# Only patch if our replacement line is NOT already present
+if ! grep -q 'return std::string(strerror(code ? code : errno));' "${FS_GHC}"; then
     echo "🔧 Patching strerror_r in ghc/filesystem.hpp..."
-    
-    # Find the line with strerror_r and add Switch wrapper
-    sed -i '/return strerror_adapter(strerror_r/i #ifdef __SWITCH__\n    return std::string(strerror(code ? code : errno));\n#else' "${ROOT}/src/filesystem/ghc/filesystem.hpp"
-    sed -i '/return strerror_adapter(strerror_r/a #endif' "${ROOT}/src/filesystem/ghc/filesystem.hpp"
-    
+
+    # Insert our Switch-specific implementation before the existing call
+    sed -i '/return strerror_adapter(strerror_r/i #ifdef __SWITCH__\n    return std::string(strerror(code ? code : errno));\n#else' "${FS_GHC}"
+    sed -i '/return strerror_adapter(strerror_r/a #endif' "${FS_GHC}"
+
     echo "  ✓ Patched strerror_r for Switch"
+else
+    echo "  ℹ strerror_r already patched in ghc/filesystem.hpp"
 fi
 
 echo ""
@@ -373,12 +338,7 @@ echo ""
 NET_CPP="${ROOT}/src/net/net.cpp"
 
 if ! grep -q "__SWITCH__.*networking stub" "${NET_CPP}"; then
-    echo "🔧 Stubbing out networking module for Switch..."
-    
-    # Create backup
     cp "${NET_CPP}" "${NET_CPP}.bak"
-    
-    # Write the full stub
     cat > "${NET_CPP}" << 'NETEOF'
 #ifdef __SWITCH__
 // Switch: networking disabled — not needed for local gameplay
@@ -424,12 +384,25 @@ NETEOF
     echo -e "\n#endif // __SWITCH__ networking stub" >> "${NET_CPP}"
     
     rm "${NET_CPP}.bak"
-    echo "  ✓ Networking stub patched for Switch."
-else
-    echo "  ℹ net.cpp already patched for Switch"
 fi
 
 echo ""
+
+# ──────────────────────────────────────────────────────────────
+# Create ruby/assert.h wrapper to prevent libnx conflicts
+# ──────────────────────────────────────────────────────────────
+# libnx's service.h tries to include ruby/assert.h, which causes
+# problems. Create a dummy wrapper that just includes standard assert.
+mkdir -p "${ROOT}/switch/ruby"
+cat > "${ROOT}/switch/ruby/assert.h" << 'RUBYASSERTEOF'
+/* Wrapper to prevent libnx from including Ruby's assert.h */
+#ifndef SWITCH_RUBY_ASSERT_WRAPPER_H
+#define SWITCH_RUBY_ASSERT_WRAPPER_H
+#include <assert.h>
+#endif
+RUBYASSERTEOF
+
+echo "  ✓ Created ruby/assert.h wrapper for libnx compatibility"
 
 # ──────────────────────────────────────────────────────────────
 # Create minimal Switch platform files
@@ -659,38 +632,143 @@ int pclose(FILE *stream) {
 #endif
 POSIXEOF
 
-# Now create platform files
-cat > "${ROOT}/switch/switch_main.cpp" << 'SWITCHEOF'
+# Files referenced by src/meson.build – must exist
+cat > "${ROOT}/switch/SwitchFilesystem.cpp" << 'EOF'
 #ifdef __SWITCH__
+// TODO: real Switch filesystem implementation.
+// For now, use mkxp-z’s existing filesystem logic.
+#endif
+EOF
+
+cat > "${ROOT}/switch/SwitchInput.cpp" << 'EOF'
+#ifdef __SWITCH__
+// TODO: real Switch input mapping if needed.
+// For now, rely on SDL2’s input handling.
+#endif
+EOF
+
+# ──────────────────────────────────────────────────────────────
+# Create switch_main.cpp (Entry point + Logging)
+# ──────────────────────────────────────────────────────────────
+cat > "${ROOT}/switch/switch_main.cpp" << 'SWITCHEOF'
+
+#ifdef __SWITCH__
+
 #include <switch.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
-extern "C" {
-    void userAppInit(void);
-    void userAppExit(void);
+// Helper to redirect stdout/stderr to a file on the SD card
+void setup_file_logging() {
+    // Open a file on the SD card root
+    // O_TRUNC clears the file every time you launch the app
+    int fd = open("sdmc:/mkxpz_log.txt", O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    
+    if (fd >= 0) {
+        // Redirect stdout (1) and stderr (2) to the file descriptor
+        dup2(fd, STDOUT_FILENO);
+        dup2(fd, STDERR_FILENO);
+        
+        // Close the original file descriptor (dup2 kept a copy)
+        close(fd);
+
+        // CRITICAL: Disable buffering. 
+        // If the app crashes, buffered text won't be written to the file.
+        // With _IONBF, every printf is written immediately.
+        setvbuf(stdout, NULL, _IONBF, 0);
+        setvbuf(stderr, NULL, _IONBF, 0);
+
+        printf("--- MKXP-Z Switch Log Start ---\n");
+    }
 }
 
-void userAppInit(void) { romfsInit(); socketInitializeDefault(); }
-void userAppExit(void) { socketExit(); romfsExit(); }
-#endif
+extern "C" {
+
+// This hook is called by libnx before main()
+void userAppInit(void) {
+    // 1. Initialize ROMFS (read-only filesystem inside the NRO)
+    romfsInit();
+
+    // 2. Setup logging to sdmc:/mkxpz_log.txt
+    setup_file_logging();
+    
+    // 3. Network Sockets - DISABLED to prevent crash
+    // socketInitializeDefault(); 
+    // nxlinkStdio();
+}
+
+// This hook is called after main() returns
+void userAppExit(void) {
+    // socketExit(); // Disabled
+    romfsExit();
+}
+
+} // extern "C"
+
+#endif // __SWITCH__
 SWITCHEOF
 
-cat > "${ROOT}/switch/SwitchFilesystem.cpp" << 'SWITCHEOF'
-#ifdef __SWITCH__
-// Stub - default filesystem works
-#endif
-SWITCHEOF
-
-cat > "${ROOT}/switch/SwitchInput.cpp" << 'SWITCHEOF'
-#ifdef __SWITCH__
-// Stub - SDL2 handles input
-#endif
-SWITCHEOF
-
-# Create meson.build for the switch directory
+# Create meson.build for the switch directory (with ruby/assert.h wrapper!)
 cat > "${ROOT}/switch/meson.build" << 'MESONEOF'
 # Switch platform stub implementations
+switch_stub_sources = files(
+  'switch_iconv_stub.c',
+  'switch_getrusage_stub.c',
+  'switch_http_stub.cpp',
+  'switch_posix_stubs.c',
+  'switch_main.cpp'
+)
+
+#  Include directories for Switch stubs
+# - ../switch: for our ruby/assert.h wrapper
+# - ../src: for net/net.h (needed by switch_http_stub.cpp)
+# - libnx and portlibs: for Switch SDK headers
+switch_inc = include_directories(
+  '.',
+  '../src',
+  '/opt/devkitpro/libnx/include',
+  '/opt/devkitpro/portlibs/switch/include'
+)
+
+# Build as a static library
+switch_stubs = static_library('switch_stubs',
+  switch_stub_sources,
+  include_directories: switch_inc
+)
+MESONEOF
+
+echo "  ✓ Created Switch platform stubs (including meson.build)"
+
+echo ""
+
+# ──────────────────────────────────────────────────────────────
+# Pre-compile switch_main.cpp to avoid Ruby include conflicts
+# ──────────────────────────────────────────────────────────────
+echo "🔧 Pre-compiling switch_main.cpp..."
+
+mkdir -p "${ROOT}/switch_prebuilt"
+
+aarch64-none-elf-g++ -c "${ROOT}/switch/switch_main.cpp" \
+    -o "${ROOT}/switch_prebuilt/switch_main.o" \
+    -std=c++14 \
+    -D__SWITCH__ -DMKXP_BACKEND_GLES2 -Dunix \
+    -march=armv8-a -mtune=cortex-a57 -mtp=soft \
+    -fPIE \
+    -I/opt/devkitpro/libnx/include \
+    -I/opt/devkitpro/portlibs/switch/include
+
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to compile switch_main.cpp"
+    exit 1
+fi
+
+echo "  ✓ Pre-compiled switch_main.o"
+
+# Update meson.build to use pre-compiled object
+cat > "${ROOT}/switch/meson.build" << 'MESONEOF'
+# Switch platform stub implementations  
 switch_stub_sources = files(
   'switch_iconv_stub.c',
   'switch_getrusage_stub.c',
@@ -698,14 +776,16 @@ switch_stub_sources = files(
   'switch_posix_stubs.c'
 )
 
+# Pre-compiled switch_main.o (compiled outside Meson to avoid Ruby conflicts)
+switch_main_obj = files('../switch_prebuilt/switch_main.o')
+
 # Build as a static library
 switch_stubs = static_library('switch_stubs',
   switch_stub_sources,
+  objects: switch_main_obj,
   include_directories: include_directories('../src')
 )
 MESONEOF
-
-echo "  ✓ Created Switch platform stubs (including meson.build)"
 
 echo ""
 
@@ -756,20 +836,33 @@ echo ""
 echo "Output ELF: ${BUILD}/mkxp-z"
 echo ""
 
-# Generate NRO if elf2nro is available
-if command -v elf2nro >/dev/null 2>&1; then
-    echo "📦 Generating .nro file..."
-    elf2nro "${BUILD}/mkxp-z" "${BUILD}/mkxp-z.nro" --icon="${ROOT}/assets/icon.png" --nacp="${ROOT}/assets/mkxp-z.nacp" 2>/dev/null || \
-    elf2nro "${BUILD}/mkxp-z" "${BUILD}/mkxp-z.nro"
+# ──────────────────────────────────────────────────────────────
+# Generate .nacp and .nro
+# ──────────────────────────────────────────────────────────────
+if command -v nacptool > /dev/null 2>&1 && command -v elf2nro > /dev/null 2>&1; then
+    echo "📦 Generating .nacp and .nro files..."
     
-    if [ -f "${BUILD}/mkxp-z.nro" ]; then
-        echo "  ✅ Generated: ${BUILD}/mkxp-z.nro"
+    # Create .nacp metadata file
+    nacptool --create "mkxp-z" "mkxp-z Team" "1.0.0" "${BUILD}/mkxp-z.nacp"
+    
+    if [ -f "${BUILD}/mkxp-z.nacp" ]; then
+        echo "  ✅ Generated: ${BUILD}/mkxp-z.nacp"
+        
+        # Generate .nro with .nacp
+        elf2nro "${BUILD}/mkxp-z" "${BUILD}/mkxp-z.nro" --nacp="${BUILD}/mkxp-z.nacp"
+        
+        if [ -f "${BUILD}/mkxp-z.nro" ]; then
+            echo "  ✅ Generated: ${BUILD}/mkxp-z.nro"
+        else
+            echo "  ⚠️  Failed to generate .nro file"
+        fi
     else
-        echo "  ⚠️  Failed to generate .nro file"
+        echo "  ⚠️  Failed to generate .nacp file"
     fi
 else
-    echo "⚠️  elf2nro not found, skipping .nro generation"
+    echo "⚠️  nacptool or elf2nro not found, skipping .nro generation"
 fi
+
 
 echo ""
 echo "Next steps:"

@@ -202,6 +202,15 @@ static void setupWindowIcon(const Config &conf, SDL_Window *win) {
 }
 
 int main(int argc, char *argv[]) {
+    printf("mkxp-z: entering main()\n");
+    fflush(stdout);
+
+    // Print arguments for debugging
+    for(int i = 0; i < argc; i++) {
+        printf("Arg %d: %s\n", i, argv[i]);
+    }
+    fflush(stdout);
+
     SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");
     SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
 
@@ -209,16 +218,29 @@ int main(int argc, char *argv[]) {
     SDL_SetHint(SDL_HINT_OPENGL_ES_DRIVER, "1");
 #endif
 
+    printf("mkxp-z: before SDL_Init\n");
+    fflush(stdout);
+
     /* initialize SDL first */
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_TIMER) < 0) {
+      printf("mkxp-z: SDL_Init failed: %s\n", SDL_GetError());
+      fflush(stdout);
       showInitError(std::string("Error initializing SDL: ") + SDL_GetError());
       return 0;
     }
 
+    printf("mkxp-z: after SDL_Init\n");
+    fflush(stdout);
+
     if (!EventThread::allocUserEvents()) {
+      printf("mkxp-z: EventThread::allocUserEvents failed\n");
+      fflush(stdout);
       showInitError("Error allocating SDL user events");
       return 0;
     }
+
+    printf("mkxp-z: after EventThread::allocUserEvents\n");
+    fflush(stdout);
 
 #ifndef WORKDIR_CURRENT
     char dataDir[512]{};

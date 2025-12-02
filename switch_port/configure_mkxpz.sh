@@ -10,9 +10,9 @@ export LIBS_DIR=${TOPDIR}/libs
 export PATH=${DEVKITARM}/bin:$PATH
 
 # Common Flags for Switch
-export CFLAGS="-march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE -D__SWITCH__ -Dunix -DPHYSFS_NO_CDROM_SUPPORT=1 -I${DEVKITPRO}/libnx/include -I${DEVKITPRO}/portlibs/switch/include"
+export CFLAGS="-march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIC -D__SWITCH__ -Dunix -DPHYSFS_NO_CDROM_SUPPORT=1 -I${DEVKITPRO}/libnx/include -I${DEVKITPRO}/portlibs/switch/include"
 export CXXFLAGS="${CFLAGS}"
-export LDFLAGS="-specs=${DEVKITPRO}/libnx/switch.specs -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE -L${DEVKITPRO}/libnx/lib -L${DEVKITPRO}/portlibs/switch/lib -lnx -lm"
+export LDFLAGS="-specs=${DEVKITPRO}/libnx/switch.specs -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIC -L${DEVKITPRO}/libnx/lib -L${DEVKITPRO}/portlibs/switch/lib -lnx -lm"
 
 mkdir -p "${LIBS_DIR}"
 
