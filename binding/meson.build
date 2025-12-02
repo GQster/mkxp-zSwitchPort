@@ -6,7 +6,9 @@ if get_option('mri_includes') == ''
     elif ver.version_compare('>=3.0') and compilers['cpp'].get_id() == 'clang'
         global_args += '-fdeclspec'
     endif
-    global_dependencies += dependency('ruby-' + ver)
+    if host_system != 'switch'  # Ruby already in global_dependencies for Switch
+        global_dependencies += dependency('ruby-' + ver)
+    endif
 else
     global_args += ('-I' + get_option('mri_includes'))
     global_dependencies += compilers['cpp'].find_library(get_option('mri_library'), dirs: get_option('mri_libpath'))

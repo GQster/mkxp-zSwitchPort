@@ -1,16 +1,13 @@
+#ifdef __SWITCH__
 #include <switch.h>
-#include "main.h"
+#include <stdio.h>
+#include <unistd.h>
 
-int main(int argc, char* argv[]) {
-    socketInitializeDefault();
-    nxlinkStdio();
-    romfsInit();
-    hidInitialize();
-
-    Engine::run(argc, argv);
-
-    hidExit();
-    romfsExit();
-    socketExit();
-    return 0;
+extern "C" {
+    void userAppInit(void);
+    void userAppExit(void);
 }
+
+void userAppInit(void) { romfsInit(); socketInitializeDefault(); }
+void userAppExit(void) { socketExit(); romfsExit(); }
+#endif

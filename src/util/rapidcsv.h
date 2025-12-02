@@ -281,6 +281,37 @@ namespace rapidcsv
     const ConverterParams& mConverterParams;
   };
 
+  #ifdef __SWITCH__
+  // Full specialization for std::wstring on Switch.
+  // Avoids going through the numeric std::stold( ) path, which expects a wstring.
+  template<>
+  class Converter<std::wstring>
+  {
+  public:
+    Converter(const ConverterParams& pConverterParams)
+      : mConverterParams(pConverterParams)
+    {
+    }
+
+    void ToStr(const std::wstring& pVal, std::string& pStr) const
+    {
+      pStr.clear();
+      for (wchar_t c : pVal)
+        pStr.push_back(static_cast<char>(c & 0xFF));
+    }
+
+    void ToVal(const std::string& pStr, std::wstring& pVal) const
+    {
+      pVal.clear();
+      for (unsigned char c : pStr)
+        pVal.push_back(static_cast<wchar_t>(c));
+    }
+
+  private:
+    const ConverterParams& mConverterParams;
+  };
+  #endif  // __SWITCH__
+
   /**
    * @brief     Specialized implementation handling string to string conversion.
    * @param     pVal                  string

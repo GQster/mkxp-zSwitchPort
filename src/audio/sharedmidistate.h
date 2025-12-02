@@ -1,3 +1,4 @@
+#include "switch_assert_compat.h"
 /*
 ** sharedmidistate.h
 **

@@ -41,7 +41,9 @@
 #include "eventthread.h"
 
 #include <vector>
+#ifndef __SWITCH__
 #include "util/rapidcsv.h"
+#endif
 
 extern "C" {
 #include <ruby.h>
@@ -693,6 +695,19 @@ RB_METHOD_GUARD(mkxpLaunch) {
 }
 RB_METHOD_GUARD_END
 
+#ifdef __SWITCH__
+
+// Switch: rapidcsv is not used; provide a stub implementation.
+RB_METHOD_GUARD(mkxpParseCSV) {
+    RB_UNUSED_PARAM;
+
+    // Could also rb_warn(...) if you want a Ruby warning.
+    return rb_ary_new(); // empty array
+}
+RB_METHOD_GUARD_END
+
+#else
+
 RB_METHOD_GUARD(mkxpParseCSV) {
     RB_UNUSED_PARAM;
     
@@ -719,6 +734,7 @@ RB_METHOD_GUARD(mkxpParseCSV) {
     return ret;
 }
 RB_METHOD_GUARD_END
+#endif // __SWITCH__
 
 json5pp::value loadUserSettings() {
     json5pp::value ret;

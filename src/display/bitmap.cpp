@@ -56,6 +56,7 @@
 
 extern "C" {
 #include "libnsgif/libnsgif.h"
+#include <cassert>
 }
 
 #define GUARD_MEGA \

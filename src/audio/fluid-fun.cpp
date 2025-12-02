@@ -12,6 +12,8 @@
 #define FLUID_LIB "@rpath/libfluidsynth.dylib"
 #elif __APPLE__
 #define FLUID_LIB "libfluidsynth.3.dylib"
+#elif defined(__SWITCH__)
+#define FLUID_LIB "libfluidsynth.so"
 #elif __WIN32__
 #define FLUID_LIB "fluidsynth.dll"
 #else

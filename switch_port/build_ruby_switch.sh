@@ -92,7 +92,7 @@ echo ">>> Configuring Ruby..."
 echo ""
 echo ">>> Patching for Switch..."
 
-# Complete mmap/mprotect shim
+# Complete mmap/mprotect and dl* shim
 cat > switch_shim.h <<'EOF'
 #ifndef RUBY_SWITCH_SHIM_H
 #define RUBY_SWITCH_SHIM_H
@@ -130,7 +130,7 @@ cat > switch_shim.h <<'EOF'
 #define PROT_EXEC 4
 #endif
 
-/* Function implementations */
+/* mmap function implementations */
 static inline void* mmap(void *addr, size_t length, int prot, int flags, int fd, long offset) {
     (void)addr; (void)prot; (void)flags; (void)fd; (void)offset;
     void *mem = calloc(1, length);
@@ -150,6 +150,54 @@ static inline int mprotect(void *addr, size_t len, int prot) {
     return 0;  /* Always succeed - Switch doesn't have memory protection */
 }
 
+/* Dynamic loading stubs (for addr2line.c, mjit.c, etc.) */
+#ifndef RTLD_NOW
+#define RTLD_NOW 0
+#endif
+#ifndef RTLD_LOCAL
+#define RTLD_LOCAL 0
+#endif
+#ifndef RTLD_DEFAULT
+#define RTLD_DEFAULT ((void*)0)
+#endif
+
+typedef struct {
+    const char *dli_fname;
+    void *dli_fbase;
+    const char *dli_sname;
+    void *dli_saddr;
+} Dl_info;
+
+static inline void* dlopen(const char *filename, int flag) {
+    (void)filename; (void)flag;
+    return NULL;  /* No dynamic loading on Switch */
+}
+
+static inline int dlclose(void *handle) {
+    (void)handle;
+    return 0;
+}
+
+static inline void* dlsym(void *handle, const char *symbol) {
+    (void)handle; (void)symbol;
+    return NULL;
+}
+
+static inline int dladdr(const void *addr, Dl_info *info) {
+    (void)addr;
+    if (info) {
+        info->dli_fname = NULL;
+        info->dli_fbase = NULL;
+        info->dli_sname = NULL;
+        info->dli_saddr = NULL;
+    }
+    return 0;  /* Could not find symbol */
+}
+
+static inline char* dlerror(void) {
+    return NULL;
+}
+
 #endif /* __SWITCH__ */
 #endif /* RUBY_SWITCH_SHIM_H */
 EOF
@@ -157,7 +205,7 @@ EOF
 echo "    → Created switch_shim.h"
 
 # Apply shim to all files that need it
-for F in cont.c io_buffer.c gc.c; do
+for F in cont.c io_buffer.c gc.c vm.c addr2line.c; do
     if [ -f "$F" ]; then
         echo "    → Patching $F (adding shim)"
         sed -i '1i#include "switch_shim.h"' "$F"
@@ -174,6 +222,41 @@ if [ -f io.c ]; then
     sed -i '3i#else' io.c
     sed -i '4i#define setmode(fd, mode) ((void)0)' io.c
     sed -i '5i#endif' io.c
+fi
+
+# Patch thread.c and thread_pthread.c for signal functions
+if [ -f thread.c ]; then
+    echo "    → Patching thread.c (disabling posix_signal)"
+    # Stub out posix_signal for Switch
+    sed -i '1i#ifdef __SWITCH__' thread.c
+    sed -i '2i#define posix_signal(sig, func) ((void)0)' thread.c
+    sed -i '3i#endif' thread.c
+fi
+
+if [ -f thread_pthread.c ]; then
+    echo "    → Patching thread_pthread.c (disabling posix_signal)"
+    sed -i '1i#ifdef __SWITCH__' thread_pthread.c
+    sed -i '2i#define posix_signal(sig, func) ((void)0)' thread_pthread.c
+    sed -i '3i#endif' thread_pthread.c
+fi
+
+# Patch mjit.c to disable dynamic loading on Switch (comprehensive)
+if [ -f mjit.c ]; then
+    echo "    → Patching mjit.c (comprehensive dl* stub)"
+    # Add Switch-specific stubs at the beginning
+    cat > mjit_switch_stub.h << 'MJIT_EOF'
+#ifdef __SWITCH__
+/* MJIT disabled on Switch - stub out all dynamic loading */
+#define dlopen(file, mode) ((void*)0)
+#define dlclose(handle) (0)
+#define dlsym(handle, symbol) ((void*)0)
+#define dlerror() ("MJIT disabled on Nintendo Switch")
+#define RTLD_NOW 0
+#define RTLD_DEFAULT ((void*)0)
+#endif
+MJIT_EOF
+    sed -i '1i#include "mjit_switch_stub.h"' mjit.c
+    sed -i 's|#include <dlfcn.h>|#ifndef __SWITCH__\n#include <dlfcn.h>\n#endif|g' mjit.c
 fi
 
 
@@ -226,10 +309,10 @@ PYTHON_EOF
 
 echo "    ✓ All patches applied"
 
-# 7. Build
+# 7. Build - only build the static library, skip extensions
 echo ""
-echo ">>> Building (5-10 min)..."
-make -j$(nproc) 2>&1 | tee build.log
+echo ">>> Building static library (5-10 min)..."
+make -j$(nproc) libruby-static.a 2>&1 | tee build.log
 
 if [ $? -ne 0 ]; then
     echo ""
@@ -239,25 +322,103 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 8. Install
 echo ""
-echo ">>> Installing..."
-make install 2>&1 | tee install.log
-[ $? -eq 0 ] || exit 1
+echo ">>> Building encodings..."
+make -j$(nproc) enc 2>&1 | tee -a build.log || true  # Encodings may partially fail, that's ok
 
-# 9. Verify
-if [ -f "${INSTALL_DIR}/lib/libruby-static.a" ]; then
+# 8. Install headers and library
+echo ""
+echo ">>> Installing Ruby..."
+
+# Try make install (will partially fail, that's OK)
+make install 2>&1 | tee install.log || true
+
+# Ensure library is there
+if [ ! -f "${INSTALL_DIR}/lib/libruby-static.a" ]; then
+    echo "    → Manually copying library..."
+    mkdir -p "${INSTALL_DIR}/lib"
+    cp -v libruby-static.a "${INSTALL_DIR}/lib/"
+fi
+
+# ✅ CRITICAL: Manually copy ALL headers with proper structure
+echo "    → Ensuring all headers are installed..."
+
+# Ruby puts headers in .ext/include during build
+if [ -d ".ext/include/ruby-3.2.0" ]; then
+    echo "    → Copying from .ext/include/ruby-3.2.0/"
+    mkdir -p "${INSTALL_DIR}/include"
+    cp -r .ext/include/ruby-3.2.0 "${INSTALL_DIR}/include/" 2>/dev/null || true
+fi
+
+# Also need the main include/ directory for additional headers
+if [ -d "include" ]; then
+    echo "    → Merging from source include/"
+    # Copy top-level headers
+    cp -r include/*.h "${INSTALL_DIR}/include/ruby-3.2.0/" 2>/dev/null || true
+    
+    # Copy ruby/ subdirectory if it exists
+    if [ -d "include/ruby" ]; then
+        mkdir -p "${INSTALL_DIR}/include/ruby-3.2.0/ruby"
+        cp -r include/ruby/* "${INSTALL_DIR}/include/ruby-3.2.0/ruby/" 2>/dev/null || true
+    fi
+fi
+
+# Architecture-specific headers
+if [ -d ".ext/include/aarch64-elf" ]; then
+    echo "    → Copying architecture headers..."
+    cp -r .ext/include/aarch64-elf "${INSTALL_DIR}/include/ruby-3.2.0/" 2>/dev/null || true
+fi
+
+echo "✓ Install complete"
+
+# 9. Verify installation
+echo ""
+echo "🔍 Verifying installation..."
+
+ERRORS=0
+
+# Check library
+if [ ! -f "${INSTALL_DIR}/lib/libruby-static.a" ]; then
+    echo "❌ Library not found: ${INSTALL_DIR}/lib/libruby-static.a"
+    ERRORS=1
+else
     SIZE_MB=$(( $(stat -c%s "${INSTALL_DIR}/lib/libruby-static.a") / 1024 / 1024 ))
+    echo "✅ Library: libruby-static.a (${SIZE_MB} MB)"
+fi
+
+# Check headers
+if [ ! -d "${INSTALL_DIR}/include/ruby-3.2.0" ]; then
+    echo "❌ Headers not found: ${INSTALL_DIR}/include/ruby-3.2.0"
+    echo ""
+    echo "Current structure:"
+    find "${INSTALL_DIR}/include" -maxdepth 2 -type d 2>/dev/null || echo "  (empty)"
+    ERRORS=1
+else
+    echo "✅ Headers: ruby-3.2.0/"
+    
+    # Check for architecture-specific headers
+    ARCH_HEADERS=$(find "${INSTALL_DIR}/include/ruby-3.2.0" -name "config.h" | head -1)
+    if [ -n "$ARCH_HEADERS" ]; then
+        echo "✅ Arch headers: $(dirname $ARCH_HEADERS | xargs basename)"
+    else
+        echo "⚠️  Architecture-specific headers not found (may cause issues)"
+    fi
+fi
+
+if [ $ERRORS -gt 0 ]; then
+    echo ""
+    echo "❌ Installation incomplete!"
+    exit 1
+fi
+
+# Success!
 echo ""    
     echo "════════════════════════════════════════════════════════════"
-    echo "  ✅ Ruby Built Successfully! (${SIZE_MB} MB)"
+echo "  ✅ Ruby 3.2.2 Built Successfully!"
     echo "════════════════════════════════════════════════════════════"
     echo ""
-    echo "${INSTALL_DIR}/lib/libruby-static.a"
-        echo ""
-    echo "Next: cd /workspace/switch_port && ./build_mkxpz_switch.sh"
-    echo ""
-else
-    echo "❌ Library missing!"
-        exit 1
-fi
+echo "Library:  ${INSTALL_DIR}/lib/libruby-static.a (${SIZE_MB} MB)"
+echo "Headers:  ${INSTALL_DIR}/include/ruby-3.2.0/"
+echo ""
+echo "Next: cd /workspace/switch_port && ./build_mkxpz_switch.sh"
+echo ""

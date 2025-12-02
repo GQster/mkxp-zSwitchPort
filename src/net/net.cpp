@@ -1,3 +1,472 @@
+#ifdef __SWITCH__
+// Switch: networking disabled — not needed for local gameplay
+#include <string>
+
+namespace mkxp
+{
+
+// Define a minimal stub class so the linker sees the proper symbols.
+// The real class is not available on Switch builds.
+struct Net
+{
+    static bool isAvailable();
+    static void downloadToFile(const std::string &url, const std::string &path);
+    static std::string downloadToMemory(const std::string &url);
+    static int  getProgress();
+    static bool isDownloading();
+    static void cancelDownload();
+};
+
+// Stub implementations
+bool Net::isAvailable()              { return false; }
+void Net::downloadToFile(const std::string &, const std::string &) { }
+std::string Net::downloadToMemory(const std::string &)             { return ""; }
+int Net::getProgress()               { return 0; }
+bool Net::isDownloading()            { return false; }
+void Net::cancelDownload()           { }
+
+} // namespace mkxp
+
+#else
+// ──────────────────────────────────────────────
+// Non‑Switch: compile the original implementation
+// ──────────────────────────────────────────────
+#include "net.h"
+#include <string>
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+// Stub implementation for Switch
+namespace mkxp {
+
+bool Net::isAvailable() { 
+return false; 
+}
+
+    void Net::downloadToFile(const std::string&, const std::string&) {
+    // Stub - do nothing
+}
+
+    std::string Net::downloadToMemory(const std::string&) { 
+return ""; 
+}
+
+    int Net::getProgress() { 
+return 0; 
+}
+
+    bool Net::isDownloading() { 
+return false; 
+}
+
+    void Net::cancelDownload() {
+    // Stub - do nothing
+}
+
+} // namespace mkxp
+
+#else
+// Original implementation for non-Switch platforms
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+namespace mkxp {
+    bool Net::isAvailable() { return false; }
+    void Net::downloadToFile(const std::string&, const std::string&) {}
+    std::string Net::downloadToMemory(const std::string&) { return ""; }
+    int Net::getProgress() { return 0; }
+    bool Net::isDownloading() { return false; }
+    void Net::cancelDownload() {}
+}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+// Define stub implementations outside namespace
+bool mkxp::Net::isAvailable() { return false; }
+void mkxp::Net::downloadToFile(const std::string&, const std::string&) {}
+std::string mkxp::Net::downloadToMemory(const std::string&) { return ""; }
+int mkxp::Net::getProgress() { return 0; }
+bool mkxp::Net::isDownloading() { return false; }
+void mkxp::Net::cancelDownload() {}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+// Define stub implementations outside namespace
+bool mkxp::Net::isAvailable() { return false; }
+void mkxp::Net::downloadToFile(const std::string&, const std::string&) {}
+std::string mkxp::Net::downloadToMemory(const std::string&) { return ""; }
+int mkxp::Net::getProgress() { return 0; }
+bool mkxp::Net::isDownloading() { return false; }
+void mkxp::Net::cancelDownload() {}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+// Define stub implementations outside namespace
+bool mkxp::Net::isAvailable() { return false; }
+void mkxp::Net::downloadToFile(const std::string&, const std::string&) {}
+std::string mkxp::Net::downloadToMemory(const std::string&) { return ""; }
+int mkxp::Net::getProgress() { return 0; }
+bool mkxp::Net::isDownloading() { return false; }
+void mkxp::Net::cancelDownload() {}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+// Define stub implementations outside namespace
+bool mkxp::Net::isAvailable() { return false; }
+void mkxp::Net::downloadToFile(const std::string&, const std::string&) {}
+std::string mkxp::Net::downloadToMemory(const std::string&) { return ""; }
+int mkxp::Net::getProgress() { return 0; }
+bool mkxp::Net::isDownloading() { return false; }
+void mkxp::Net::cancelDownload() {}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+// Define stub implementations outside namespace
+bool mkxp::Net::isAvailable() { return false; }
+void mkxp::Net::downloadToFile(const std::string&, const std::string&) {}
+std::string mkxp::Net::downloadToMemory(const std::string&) { return ""; }
+int mkxp::Net::getProgress() { return 0; }
+bool mkxp::Net::isDownloading() { return false; }
+void mkxp::Net::cancelDownload() {}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+// Define stub implementations outside namespace
+bool mkxp::Net::isAvailable() { return false; }
+void mkxp::Net::downloadToFile(const std::string&, const std::string&) {}
+std::string mkxp::Net::downloadToMemory(const std::string&) { return ""; }
+int mkxp::Net::getProgress() { return 0; }
+bool mkxp::Net::isDownloading() { return false; }
+void mkxp::Net::cancelDownload() {}
+
+#else
+#ifdef __SWITCH__
+// Switch: networking disabled - not needed for local gameplay
+#include "net.h"
+#include <string>
+
+// Define stub implementations outside namespace
+bool mkxp::Net::isAvailable() { return false; }
+void mkxp::Net::downloadToFile(const std::string&, const std::string&) {}
+std::string mkxp::Net::downloadToMemory(const std::string&) { return ""; }
+int mkxp::Net::getProgress() { return 0; }
+bool mkxp::Net::isDownloading() { return false; }
+void mkxp::Net::cancelDownload() {}
+
+#else
 //
 //  net.cpp
 //  mkxp-z
@@ -242,3 +711,61 @@ HTTPResponse HTTPRequest::post(const char *body, const char *content_type) {
     delete client;
     return ret;
 }
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // !__SWITCH__
+
+#endif // __SWITCH__ networking stub

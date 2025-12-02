@@ -196,8 +196,7 @@ Bottom line
 | **Cross-Compilation Setup** | ✅ **Complete** | • `switch.ini` Meson cross-file created<br>• Toolchain: `aarch64-none-elf-gcc` (GCC 15.1.0)<br>• Flags: `-march=armv8-a -mtune=cortex-a57 -D__SWITCH__` |
 | **PhysFS Build** | ✅ **Complete** | • Version: 3.2.0<br>• Patched for Switch POSIX mode<br>• Output: `libs/physfs-switch/lib/libphysfs.a`<br>• Automated via `configure_mkxpz.sh` |
 | **SDL_sound Build** | ✅ **Complete** | • Version: 2.0.1<br>• Examples removed, static-only<br>• Patched `sdl2.pc` (removed invalid EGL libs)<br>• Output: `libs/SDL_sound-switch/lib/libSDL2_sound.a` |
-| **Ruby 3.2 Cross-Compilation** | 🔄 **85% Complete** | **✅ Working:**<br>• Configure with 50+ platform flags<br>• `switch_shim.h` created (mmap/mprotect emulation)<br>• `cont.c`, `io_buffer.c`, `file.c` patched<br><br>**🔴 Blocker:**<br>• `gc.c` signal handlers still compiling<br>• Targeting libnx (no POSIX signals)<br>• Current fix: `awk` wrapper to disable handlers |
-
+| **Ruby 3.2 Cross-Compilation** | 🔄 **Complete** | switch_port/build_ruby_switch.sh| might be some issues still
 ---
 
 ## 3. Immediate Next Steps (Current Challenge)
@@ -269,4 +268,6 @@ clear && docker build -t switch-dev switch_port/. && xhost +local: && docker run
 
 cd switch_port
 clear && rm -rf ../build-switch
+./configure_mkxpz.sh
+./build_ruby_switch.sh
 ./build_mkxpz_switch.sh

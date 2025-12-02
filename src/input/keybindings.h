@@ -27,7 +27,7 @@
 #include <SDL_scancode.h>
 #include <SDL_gamecontroller.h>
 #include <stdint.h>
-#include <assert.h>
+#include <cassert>
 #include <vector>
 
 enum AxisDir

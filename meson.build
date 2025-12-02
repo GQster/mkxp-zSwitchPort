@@ -132,6 +132,8 @@ if host_system == 'windows'
 elif host_system == 'switch'
     # Use our new Switch directory instead of linux/macos
     subdir('switch')
+    # Link the switch stub library
+    global_dependencies += declare_dependency(link_with: switch_stubs)
 else
     subdir('linux')
     rpath = '$ORIGIN/lib'

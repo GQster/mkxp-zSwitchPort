@@ -5,6 +5,7 @@
 //  Created by ゾロアーク on 11/21/20.
 //
 
+#include "switch_filesystem_shim.h"
 #include <SDL_filesystem.h>
 
 #include "filesystemImpl.h"

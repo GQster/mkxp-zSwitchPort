@@ -15,6 +15,7 @@
 #include <string.h>
 #include <assert.h>
 
+#include "switch_assert.h"
 #ifdef _WIN32
 #include <windows.h>
 #define THEORAPLAY_THREAD_T    HANDLE

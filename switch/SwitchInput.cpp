@@ -1,1 +1,3 @@
-// add later once input mapping is ready
+#ifdef __SWITCH__
+// Stub - SDL2 handles input
+#endif

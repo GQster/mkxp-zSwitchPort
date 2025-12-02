@@ -24,6 +24,7 @@
 #include "util/encoding.h"
 
 #include "system/system.h"
+#include <cassert>
 
 
 namespace json = json5pp;
