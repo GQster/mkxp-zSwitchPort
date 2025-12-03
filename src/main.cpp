@@ -201,7 +201,14 @@ static void setupWindowIcon(const Config &conf, SDL_Window *win) {
   }
 }
 
+#ifdef __SWITCH__
+extern "C" void switch_enable_logging();
+#endif
+
 int main(int argc, char *argv[]) {
+#ifdef __SWITCH__
+    switch_enable_logging();
+#endif
     printf("mkxp-z: entering main()\n");
     fflush(stdout);
 
@@ -252,14 +259,53 @@ int main(int argc, char *argv[]) {
     }
 #endif
     if (!dataDir[0]) {
+#ifdef __SWITCH__
+        // On Switch, SDL_GetBasePath() might return "romfs:/", which causes
+        // crashes in Ryujinx (homebrew bug) and potentially on hardware if
+        // RomFS isn't fully initialized.
+        // hbmenu sets the CWD to the .nro directory, so "." is safer.
+        strncpy(dataDir, ".", sizeof(dataDir));
+#else
         strncpy(dataDir, mkxp_fs::getDefaultGameRoot().c_str(), sizeof(dataDir));
+#endif
     }
     mkxp_fs::setCurrentDirectory(dataDir);
 #endif
     
     /* now we load the config */
     Config conf;
-    conf.read(argc, argv);
+
+#ifdef __SWITCH__
+    printf("mkxp-z: SKIPPING Config::read() on Switch (temporary)\n");
+    fflush(stdout);
+
+    // Minimal manual setup to let mkxp-z run
+    conf.rgssVersion = 1;                // RGSS1 by default
+    conf.defScreenW  = 640;
+    conf.defScreenH  = 480;
+    conf.game.title  = "mkxp-z Switch";
+
+    conf.winResizable = false;
+    conf.fullscreen   = false;
+    conf.debugMode    = false;
+    conf.vsync        = true;
+
+    // If windowTitle is empty, main() will set it from game.title later
+#else
+    try {
+        conf.read(argc, argv);
+    } catch (const std::exception &e) {
+        printf("CRASH in Config::read: %s\n", e.what());
+        fflush(stdout);
+        showInitError(std::string("Config load failed: ") + e.what());
+        return 0;
+    } catch (...) {
+        printf("CRASH in Config::read: Unknown exception\n");
+        fflush(stdout);
+        showInitError("Config load failed: Unknown exception");
+        return 0;
+    }
+#endif
 
 #if defined(__WIN32__)
     // Create a debug console in debug mode

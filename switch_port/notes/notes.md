@@ -303,3 +303,8 @@ EX:
    aarch64-none-elf-addr2line -f -C -e build-switch/mkxp-z 0x114da0 0x114c38 0xac
 ```
 
+
+## one cmd to clear, copy mkxpz, and run in emulator:
+```
+clear && cp ~/projects/mkxp-zSwitchPort/build-switch/mkxp-z.nro /home/grant/.var/app/io.github.ryubing.Ryujinx/config/Ryujinx/sdcard/switch/ && flatpak run io.github.ryubing.Ryujinx /home/grant/.var/app/io.github.ryubing.Ryujinx/config/Ryujinx/sdcard/switch/mkxp-z.nro
+```

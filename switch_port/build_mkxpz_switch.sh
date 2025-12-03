@@ -389,8 +389,15 @@ fi
 echo ""
 
 # ──────────────────────────────────────────────────────────────
-# Create ruby/assert.h wrapper to prevent libnx conflicts
+# Create minimal Switch platform files
 # ──────────────────────────────────────────────────────────────
+echo "🔧 Creating Switch platform stubs..."
+
+# ALWAYS delete and recreate - no conditions
+rm -rf "${ROOT}/switch"
+mkdir -p "${ROOT}/switch"
+
+# NOW create the ruby/assert.h wrapper inside the new switch/ dir
 # libnx's service.h tries to include ruby/assert.h, which causes
 # problems. Create a dummy wrapper that just includes standard assert.
 mkdir -p "${ROOT}/switch/ruby"
@@ -403,15 +410,6 @@ cat > "${ROOT}/switch/ruby/assert.h" << 'RUBYASSERTEOF'
 RUBYASSERTEOF
 
 echo "  ✓ Created ruby/assert.h wrapper for libnx compatibility"
-
-# ──────────────────────────────────────────────────────────────
-# Create minimal Switch platform files
-# ──────────────────────────────────────────────────────────────
-echo "🔧 Creating Switch platform stubs..."
-
-# ALWAYS delete and recreate - no conditions
-rm -rf "${ROOT}/switch"
-mkdir -p "${ROOT}/switch"
 
 # Create stub files FIRST (before platform files)
 cat > "${ROOT}/switch/switch_iconv_stub.c" << 'ICONVEOF'
@@ -654,6 +652,11 @@ cat > "${ROOT}/switch/switch_main.cpp" << 'SWITCHEOF'
 
 #ifdef __SWITCH__
 
+// Avoid pulling in Ruby's assert.h from libnx service.h:
+// we don't need Ruby APIs in this TU, and ruby/config.h
+// is not available in our cross-build include layout.
+#define RUBY_ASSERT_H 1
+
 #include <switch.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -707,6 +710,11 @@ void userAppExit(void) {
 
 } // extern "C"
 
+// Stub so src/main.cpp's call links correctly
+extern "C" void switch_enable_logging() {
+    setup_file_logging();
+}
+
 #endif // __SWITCH__
 SWITCHEOF
 
@@ -721,10 +729,6 @@ switch_stub_sources = files(
   'switch_main.cpp'
 )
 
-#  Include directories for Switch stubs
-# - ../switch: for our ruby/assert.h wrapper
-# - ../src: for net/net.h (needed by switch_http_stub.cpp)
-# - libnx and portlibs: for Switch SDK headers
 switch_inc = include_directories(
   '.',
   '../src',
@@ -743,51 +747,51 @@ echo "  ✓ Created Switch platform stubs (including meson.build)"
 
 echo ""
 
-# ──────────────────────────────────────────────────────────────
-# Pre-compile switch_main.cpp to avoid Ruby include conflicts
-# ──────────────────────────────────────────────────────────────
-echo "🔧 Pre-compiling switch_main.cpp..."
+# # ──────────────────────────────────────────────────────────────
+# # Pre-compile switch_main.cpp to avoid Ruby include conflicts
+# # ──────────────────────────────────────────────────────────────
+# echo "🔧 Pre-compiling switch_main.cpp..."
 
-mkdir -p "${ROOT}/switch_prebuilt"
+# mkdir -p "${ROOT}/switch_prebuilt"
 
-aarch64-none-elf-g++ -c "${ROOT}/switch/switch_main.cpp" \
-    -o "${ROOT}/switch_prebuilt/switch_main.o" \
-    -std=c++14 \
-    -D__SWITCH__ -DMKXP_BACKEND_GLES2 -Dunix \
-    -march=armv8-a -mtune=cortex-a57 -mtp=soft \
-    -fPIE \
-    -I/opt/devkitpro/libnx/include \
-    -I/opt/devkitpro/portlibs/switch/include
+# aarch64-none-elf-g++ -c "${ROOT}/switch/switch_main.cpp" \
+#     -o "${ROOT}/switch_prebuilt/switch_main.o" \
+#     -std=c++14 \
+#     -D__SWITCH__ -DMKXP_BACKEND_GLES2 -Dunix \
+#     -march=armv8-a -mtune=cortex-a57 -mtp=soft \
+#     -fPIE \
+#     -I/opt/devkitpro/libnx/include \
+#     -I/opt/devkitpro/portlibs/switch/include
 
-if [ $? -ne 0 ]; then
-    echo "❌ Failed to compile switch_main.cpp"
-    exit 1
-fi
+# if [ $? -ne 0 ]; then
+#     echo "❌ Failed to compile switch_main.cpp"
+#     exit 1
+# fi
 
-echo "  ✓ Pre-compiled switch_main.o"
+# echo "  ✓ Pre-compiled switch_main.o"
 
-# Update meson.build to use pre-compiled object
-cat > "${ROOT}/switch/meson.build" << 'MESONEOF'
-# Switch platform stub implementations  
-switch_stub_sources = files(
-  'switch_iconv_stub.c',
-  'switch_getrusage_stub.c',
-  'switch_http_stub.cpp',
-  'switch_posix_stubs.c'
-)
+# # Update meson.build to use pre-compiled object
+# cat > "${ROOT}/switch/meson.build" << 'MESONEOF'
+# # Switch platform stub implementations  
+# switch_stub_sources = files(
+#   'switch_iconv_stub.c',
+#   'switch_getrusage_stub.c',
+#   'switch_http_stub.cpp',
+#   'switch_posix_stubs.c'
+# )
 
-# Pre-compiled switch_main.o (compiled outside Meson to avoid Ruby conflicts)
-switch_main_obj = files('../switch_prebuilt/switch_main.o')
+# # Pre-compiled switch_main.o (compiled outside Meson to avoid Ruby conflicts)
+# switch_main_obj = files('../switch_prebuilt/switch_main.o')
 
-# Build as a static library
-switch_stubs = static_library('switch_stubs',
-  switch_stub_sources,
-  objects: switch_main_obj,
-  include_directories: include_directories('../src')
-)
-MESONEOF
+# # Build as a static library
+# switch_stubs = static_library('switch_stubs',
+#   switch_stub_sources,
+#   objects: switch_main_obj,
+#   include_directories: include_directories('../src')
+# )
+# MESONEOF
 
-echo ""
+# echo ""
 
 # ──────────────────────────────────────────────────────────────
 # Configure with Meson
@@ -849,8 +853,9 @@ if command -v nacptool > /dev/null 2>&1 && command -v elf2nro > /dev/null 2>&1; 
         echo "  ✅ Generated: ${BUILD}/mkxp-z.nacp"
         
         # Generate .nro with .nacp
-        elf2nro "${BUILD}/mkxp-z" "${BUILD}/mkxp-z.nro" --nacp="${BUILD}/mkxp-z.nacp"
-        
+        elf2nro "${BUILD}/mkxp-z" "${BUILD}/mkxp-z.nro" \
+            --nacp="${BUILD}/mkxp-z.nacp" \
+            --romfsdir="${ROOT}/switch_port/romfs-root"
         if [ -f "${BUILD}/mkxp-z.nro" ]; then
             echo "  ✅ Generated: ${BUILD}/mkxp-z.nro"
         else

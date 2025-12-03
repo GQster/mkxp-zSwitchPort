@@ -99,27 +99,55 @@ bool getEnvironmentBool(const char *env, bool defaultValue) {
 }
 
 json::value readConfFile(const char *path) {
+    printf("readConfFile: Checking %s\n", path);
+    fflush(stdout);
     
+    // TEMPORARY DEBUG: Disable config loading to prevent crash
+    printf("readConfFile: SKIPPING JSON PARSE to debug crash\n");
+    fflush(stdout);
+    return json::object({});
+
+    /*
     json::value ret(0);
     if (!mkxp_fs::fileExists(path)) {
+        printf("readConfFile: %s does not exist\n", path);
+        fflush(stdout);
         return json::object({});
     }
     
     try {
+        printf("readConfFile: Reading %s\n", path);
+        fflush(stdout);
         std::string cfg = mkxp_fs::contentsOfFileAsString(path);
+        printf("readConfFile: Read %lu bytes. Parsing JSON...\n", cfg.length());
+        fflush(stdout);
         ret = json::parse5(Encoding::convertString(cfg));
+        printf("readConfFile: JSON parse successful\n");
+        fflush(stdout);
     }
     catch (const std::exception &e) {
+        printf("readConfFile: Exception: %s\n", e.what());
+        fflush(stdout);
         Debug() << "Failed to parse" << path << ":" << e.what();
     }
     catch (const Exception &e) {
+        printf("readConfFile: Exception (mkxp)\n");
+        fflush(stdout);
         Debug() << "Failed to parse" << path << ":" << "Unknown encoding";
     }
+    catch (...) {
+        printf("readConfFile: Unknown exception during parse\n");
+        fflush(stdout);
+    }
     
-    if (!ret.is_object())
+    if (!ret.is_object()) {
+        printf("readConfFile: Result is not an object\n");
+        fflush(stdout);
         ret = json::object({});
+    }
     
     return ret;
+    */
 }
 
 #define CONF_FILE "mkxp.json"

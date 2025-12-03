@@ -1,6 +1,11 @@
 
 #ifdef __SWITCH__
 
+// Avoid pulling in Ruby's assert.h from libnx service.h:
+// we don't need Ruby APIs in this TU, and ruby/config.h
+// is not available in our cross-build include layout.
+#define RUBY_ASSERT_H 1
+
 #include <switch.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -53,5 +58,10 @@ void userAppExit(void) {
 }
 
 } // extern "C"
+
+// Stub so src/main.cpp's call links correctly
+extern "C" void switch_enable_logging() {
+    setup_file_logging();
+}
 
 #endif // __SWITCH__
