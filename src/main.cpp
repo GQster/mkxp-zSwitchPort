@@ -128,27 +128,46 @@ int rgssThreadFun(void *userdata) {
   SDL_GL_MakeCurrent(threadData->window, threadData->glContext);
 #endif
 
+  printf("RGSS thread: GL init done\n");
+  fflush(stdout);
+
   /* Setup AL context */
   ALCcontext *alcCtx = alcCreateContext(threadData->alcDev, 0);
 
   if (!alcCtx) {
+    printf("RGSS thread: OpenAL context creation FAILED\n");
+    fflush(stdout);
     rgssThreadError(threadData, "Error creating OpenAL context");
     return 0;
   }
 
   alcMakeContextCurrent(alcCtx);
+  printf("RGSS thread: OpenAL context created\n");
+  fflush(stdout);
 
   try {
+    printf("RGSS thread: before SharedState::initInstance\n");
+    fflush(stdout);
     SharedState::initInstance(threadData);
+    printf("RGSS thread: after SharedState::initInstance\n");
+    fflush(stdout);
   } catch (const Exception &exc) {
+    printf("RGSS thread: EXCEPTION in SharedState::initInstance: %s\n", exc.msg.c_str());
+    fflush(stdout);
     rgssThreadError(threadData, exc.msg);
     alcDestroyContext(alcCtx);
 
     return 0;
   }
 
+  printf("RGSS thread: before scriptBinding->execute()\n");
+  fflush(stdout);
+
   /* Start script execution */
   scriptBinding->execute();
+
+  printf("RGSS thread: after scriptBinding->execute()\n");
+  fflush(stdout);
 
   threadData->rqTermAck.set();
   threadData->ethread->requestTerminate();
@@ -260,13 +279,13 @@ int main(int argc, char *argv[]) {
 #endif
     if (!dataDir[0]) {
 #ifdef __SWITCH__
-        // On Switch, SDL_GetBasePath() might return "romfs:/", which causes
-        // crashes in Ryujinx (homebrew bug) and potentially on hardware if
-        // RomFS isn't fully initialized.
-        // hbmenu sets the CWD to the .nro directory, so "." is safer.
-        strncpy(dataDir, ".", sizeof(dataDir));
+        // On Switch/Ryujinx, explicitly use the SD card path where
+        // we will place Game.ini and Data/.
+        strncpy(dataDir, "sdmc:/switch/mkxp-z", sizeof(dataDir));
+        dataDir[sizeof(dataDir) - 1] = '\0';
 #else
         strncpy(dataDir, mkxp_fs::getDefaultGameRoot().c_str(), sizeof(dataDir));
+        dataDir[sizeof(dataDir) - 1] = '\0';
 #endif
     }
     mkxp_fs::setCurrentDirectory(dataDir);
@@ -279,18 +298,31 @@ int main(int argc, char *argv[]) {
     printf("mkxp-z: SKIPPING Config::read() on Switch (temporary)\n");
     fflush(stdout);
 
-    // Minimal manual setup to let mkxp-z run
-    conf.rgssVersion = 1;                // RGSS1 by default
-    conf.defScreenW  = 640;
-    conf.defScreenH  = 480;
-    conf.game.title  = "mkxp-z Switch";
+    // Minimal manual setup before we read Game.ini
+    conf.rgssVersion = 0;          // let readGameINI() guess from Scripts extension
+    conf.execName    = "Game";     // matches Game.exe / Game.ini basename on VX Ace
+    conf.dataPathOrg = ".";        // used by prefPath
+    conf.dataPathApp = "";         // will be filled from game.title in readGameINI
 
-    conf.winResizable = false;
-    conf.fullscreen   = false;
-    conf.debugMode    = false;
-    conf.vsync        = true;
+    try {
+        printf("mkxp-z: calling Config::readGameINI()\n");
+        fflush(stdout);
+        conf.readGameINI();
+        printf("mkxp-z: readGameINI() finished, title='%s', rgssVersion=%d\n",
+               conf.game.title.c_str(), conf.rgssVersion);
+        fflush(stdout);
+    } catch (const std::exception &e) {
+        printf("mkxp-z: EXCEPTION in readGameINI(): %s\n", e.what());
+        fflush(stdout);
+        showInitError(std::string("readGameINI failed: ") + e.what());
+        return 0;
+    } catch (...) {
+        printf("mkxp-z: UNKNOWN EXCEPTION in readGameINI()\n");
+        fflush(stdout);
+        showInitError("readGameINI failed: unknown exception");
+        return 0;
+    }
 
-    // If windowTitle is empty, main() will set it from game.title later
 #else
     try {
         conf.read(argc, argv);
@@ -336,6 +368,9 @@ int main(int argc, char *argv[]) {
     assert(conf.rgssVersion >= 1 && conf.rgssVersion <= 3);
     printRgssVersion(conf.rgssVersion);
 
+    printf("mkxp-z: before IMG_Init\n");
+    fflush(stdout);
+
     int imgFlags = IMG_INIT_PNG | IMG_INIT_JPG;
     if (IMG_Init(imgFlags) != imgFlags) {
       showInitError(std::string("Error initializing SDL_image: ") +
@@ -349,6 +384,9 @@ int main(int argc, char *argv[]) {
       return 0;
     }
 
+    printf("mkxp-z: after IMG_Init\n");
+    fflush(stdout);
+
     if (TTF_Init() < 0) {
       showInitError(std::string("Error initializing SDL_ttf: ") +
                     SDL_GetError());
@@ -361,6 +399,9 @@ int main(int argc, char *argv[]) {
 
       return 0;
     }
+
+    printf("mkxp-z: after TTF_Init\n");
+    fflush(stdout);
 
     if (Sound_Init() == 0) {
       showInitError(std::string("Error initializing SDL_sound: ") +
@@ -406,7 +447,10 @@ int main(int argc, char *argv[]) {
     SDL_GL_LoadLibrary("@rpath/libEGL.dylib");
 #endif
 #endif
-    
+
+    printf("mkxp-z: before SDL_CreateWindow\n");
+    fflush(stdout);
+
     win = SDL_CreateWindow(conf.windowTitle.c_str(), SDL_WINDOWPOS_UNDEFINED,
                            SDL_WINDOWPOS_UNDEFINED, conf.defScreenW,
                            conf.defScreenH, winFlags);
@@ -420,6 +464,9 @@ int main(int argc, char *argv[]) {
       return 0;
     }
     
+    printf("mkxp-z: after SDL_CreateWindow\n");
+    fflush(stdout);
+
 #ifdef MKXPZ_BUILD_XCODE
     {
         std::string downloadsPath = "/Users/" + mkxp_sys::getUserName() + "/Downloads";
@@ -475,6 +522,8 @@ int main(int argc, char *argv[]) {
       return 0;
     }
 
+    printf("mkxp-z: after alcOpenDevice\n");
+    fflush(stdout);
     SDL_DisplayMode mode;
     SDL_GetDisplayMode(0, 0, &mode);
 
@@ -509,10 +558,18 @@ int main(int argc, char *argv[]) {
 #endif
 
     /* Start RGSS thread */
+    printf("mkxp-z: before SDL_CreateThread (RGSS)\n");
+    fflush(stdout);
     SDL_Thread *rgssThread = SDL_CreateThread(rgssThreadFun, "rgss", &rtData);
+
+    printf("mkxp-z: after SDL_CreateThread, before eventThread.process\n");
+    fflush(stdout);
 
     /* Start event processing */
     eventThread.process(rtData);
+
+    printf("mkxp-z: after eventThread.process, before rqTerm.set\n");
+    fflush(stdout);
 
     /* Request RGSS thread to stop */
     rtData.rqTerm.set();
@@ -548,6 +605,9 @@ int main(int argc, char *argv[]) {
     if (rtData.glContext)
       SDL_GL_DeleteContext(rtData.glContext);
 
+    printf("mkxp-z: main() reaching shutdown path\n");
+    fflush(stdout);
+
     /* Clean up any remainin events */
     eventThread.cleanup();
 
@@ -568,7 +628,8 @@ int main(int argc, char *argv[]) {
     TTF_Quit();
     IMG_Quit();
     SDL_Quit();
-
+    printf("mkxp-z: leaving main()\n");
+    fflush(stdout);
     return 0;
 }
 

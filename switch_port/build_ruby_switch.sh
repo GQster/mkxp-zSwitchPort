@@ -32,13 +32,13 @@ mkdir -p "${INSTALL_DIR}"
 
 # 3. Download and Extract fresh
 cd ${TOPdir}
-if [ ! -f "ruby-${RUBY_VER}.tar.gz" ]; then
+if [ ! -f "${TOPdir}/ruby-${RUBY_VER}.tar.gz" ]; then
     echo ">>> Downloading Ruby ${RUBY_VER}..."
-    wget https://cache.ruby-lang.org/pub/ruby/3.2/ruby-${RUBY_VER}.tar.gz
+    wget https://cache.ruby-lang.org/pub/ruby/3.2/ruby-${RUBY_VER}.tar.gz -O "${TOPdir}/ruby-${RUBY_VER}.tar.gz"
 fi
 
 echo ">>> Extracting Ruby ${RUBY_VER}..."
-tar -xf ruby-${RUBY_VER}.tar.gz
+tar -xf "${TOPdir}/ruby-${RUBY_VER}.tar.gz" -C "${TOPdir}"
 cd ${RUBY_SRC}
 
 # 4. Toolchain

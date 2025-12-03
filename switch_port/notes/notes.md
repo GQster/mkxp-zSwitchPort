@@ -201,6 +201,16 @@ Bottom line
 | **Emulator Verification** | ✅ **Complete** | • HelloWorld NRO and mkxp‑z NRO load in Ryujinx (firmware 21.0.0)<br>• Proper NACP inclusion prevents LibHac crash<br>• Logs stream to `sdmc:/hello_log.txt` and `sdmc:/mkxpz_log.txt` |
 | **On‑Device Testing Prep** | ⚙️ **In Progress** | • mkxp‑z NRO packaged for `/switch/mkxp-z/`<br>• Ready to deploy to real Switch via hbmenu for first run tests |
 
+### Now, on Switch (and in Ryujinx, where sdmc:/ is the Flatpak sdcard folder), mkxp‑z will always look for Game.ini in:
+   ```
+   ~/.var/app/io.github.ryubing.Ryujinx/config/Ryujinx/sdcard/switch/
+   sdmc:/switch/mkxp-z/Game.ini
+   ```
+set in 
+   ```src/main.cpp```
+line 
+   ```strncpy(dataDir, "sdmc:/switch/mkxp-z", sizeof(dataDir));```
+
 ---
 
 ## 3. Immediate Next Steps (Current Challenge)
@@ -228,25 +238,11 @@ having issues with the nro running on the switch. attempting to debug in the emu
     ```
   - Implement Joy‑Con‑to‑RGSS key mapping (`A→C`, `B→B`, `Plus→F12`, etc.) consistent with EasyRPG mapping.
 
-   - The crash is now very clear from the addr2line output:
-      switch error code: 2168-0002 (0x4a8)
-
-      crash log:
-      text
-      0x1173d0 -> libnx time.c:63
-      0x117268 -> libnx time.c:192
-      0x00ac   -> libnx runtime/devices/socket.c:948
-      So the fault is:
-
-      In libnx’s time service code, called from
-      libnx’s socket device code, which matches our use of socketInitializeDefault().
-      And since we never see any of your prints, the crash is happening during that early socket/time init, before we reach your own logging.
-
-      Given that, the simplest next step is:
-      Stop calling socketInitializeDefault() (and nxlinkStdio()) for now and see if mkxp‑z runs without crashing.
-
    - stubbed: switch/switch_time_stub.c   
 
+
+   ### Current problem:
+      realized im duplicated code in the switch_port folder. like physfs, ruby 3.2.2, sdl_sound, etc. NEED TO SWITCH TO NOT DUPLICATE CODE
 
 
 ### 🧩 Resolved Issues
@@ -278,6 +274,7 @@ having issues with the nro running on the switch. attempting to debug in the emu
    clear && rm -rf ruby-3.2.2 libs/ruby-switch && switch_port/build_ruby_switch.sh
 
    ### 2) PhysFS + SDL_sound with -fPIC
+   clear
    rm -rf physfs-src physfs-build libs/physfs-switch
    rm -rf SDL_sound-src SDL_sound-build libs/SDL_sound-switch
    switch_port/configure_mkxpz.sh
@@ -308,3 +305,55 @@ EX:
 ```
 clear && cp ~/projects/mkxp-zSwitchPort/build-switch/mkxp-z.nro /home/grant/.var/app/io.github.ryubing.Ryujinx/config/Ryujinx/sdcard/switch/ && flatpak run io.github.ryubing.Ryujinx /home/grant/.var/app/io.github.ryubing.Ryujinx/config/Ryujinx/sdcard/switch/mkxp-z.nro
 ```
+
+
+files to give to the ai:
+build_ruby_switch.sh
+build_mkxpz_switch.sh
+configure_mkxpz.sh
+switch.ini
+src/main.cpp
+src.meson.build
+binding/meson.build
+switch_port/assert_wrapper.h
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Note a couple of things to clean up later (not blocking yet)
+These are worth correcting, but I’d treat them as secondary until we see the exact crash location:
+
+Redundant / dubious GL libs on Switch
+You patched sdl2.pc to remove -lEGL -lglapi -ldrm_nouveau, then you re‑added -lglapi -ldrm_nouveau manually in:
+
+meson
+sdl2 = declare_dependency(
+    include_directories: switch_inc,
+    link_args: switch_link_args + ['-lSDL2', '-lnx', '-lglapi', '-ldrm_nouveau', '-lm']
+)
+On real hardware those Mesa/DRM libs don’t exist and aren’t needed; SDL2 for Switch uses libnx+EGL internally. Once we have the core crash identified, I’d strip that down to:
+
+meson
+sdl2 = declare_dependency(
+    include_directories: switch_inc,
+    link_args: switch_link_args + ['-lSDL2', '-lnx', '-lm']
+)
+Ruby arch include path mismatch
+switch.ini uses:
+ini
+-I/workspace/libs/ruby-switch/include/ruby-3.2.0/aarch64-linux
+src/meson.build uses:
+meson
+'../libs/ruby-switch/include/ruby-3.2.0/aarch64-elf'
+Your build_ruby_switch.sh copies .ext/include/aarch64-elf into ruby-3.2.0/aarch64-elf, so that’s the correct arch dir. The aarch64-linux include in the cross-file likely doesn’t exist and is just redundant; it probably doesn’t hurt, but we should clean it once we know everything else works.
