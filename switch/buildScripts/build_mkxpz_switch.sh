@@ -749,52 +749,6 @@ echo "  ✓ Created Switch platform stubs (including meson.build)"
 
 echo ""
 
-# # ──────────────────────────────────────────────────────────────
-# # Pre-compile switch_main.cpp to avoid Ruby include conflicts
-# # ──────────────────────────────────────────────────────────────
-# echo "🔧 Pre-compiling switch_main.cpp..."
-
-# mkdir -p "${ROOT}/switch_prebuilt"
-
-# aarch64-none-elf-g++ -c "${ROOT}/switch/switch_main.cpp" \
-#     -o "${ROOT}/switch_prebuilt/switch_main.o" \
-#     -std=c++14 \
-#     -D__SWITCH__ -DMKXP_BACKEND_GLES2 -Dunix \
-#     -march=armv8-a -mtune=cortex-a57 -mtp=soft \
-#     -fPIE \
-#     -I/opt/devkitpro/libnx/include \
-#     -I/opt/devkitpro/portlibs/switch/include
-
-# if [ $? -ne 0 ]; then
-#     echo "❌ Failed to compile switch_main.cpp"
-#     exit 1
-# fi
-
-# echo "  ✓ Pre-compiled switch_main.o"
-
-# # Update meson.build to use pre-compiled object
-# cat > "${ROOT}/switch/meson.build" << 'MESONEOF'
-# # Switch platform stub implementations  
-# switch_stub_sources = files(
-#   'switch_iconv_stub.c',
-#   'switch_getrusage_stub.c',
-#   'switch_http_stub.cpp',
-#   'switch_posix_stubs.c'
-# )
-
-# # Pre-compiled switch_main.o (compiled outside Meson to avoid Ruby conflicts)
-# switch_main_obj = files('../switch_prebuilt/switch_main.o')
-
-# # Build as a static library
-# switch_stubs = static_library('switch_stubs',
-#   switch_stub_sources,
-#   objects: switch_main_obj,
-#   include_directories: include_directories('../src')
-# )
-# MESONEOF
-
-# echo ""
-
 # ──────────────────────────────────────────────────────────────
 # Configure with Meson
 # ──────────────────────────────────────────────────────────────

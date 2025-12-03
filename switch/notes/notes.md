@@ -246,6 +246,7 @@ having issues with the nro running on the switch. attempting to debug in the emu
       Stop calling socketInitializeDefault() (and nxlinkStdio()) for now and see if mkxp‑z runs without crashing.
 
    - stubbed: switch/switch_time_stub.c   
+   - stubbed: src/config.cpp "json::value readConfFile(const char *path) "
 
 
 
@@ -278,8 +279,8 @@ having issues with the nro running on the switch. attempting to debug in the emu
    clear && rm -rf ruby-3.2.2 libs/ruby-switch && switch/buildScripts/build_ruby_switch.sh
 
    ### 2) PhysFS + SDL_sound with -fPIC
-   //dont run this i think      rm -rf physfs-src physfs-build libs/physfs-switch
-   //dont run this i think      rm -rf SDL_sound-src SDL_sound-build libs/SDL_sound-switch
+   // # dont run this i think      rm -rf physfs-src physfs-build libs/physfs-switch
+   // # dont run this i think      rm -rf SDL_sound-src SDL_sound-build libs/SDL_sound-switch
    
    clear
    switch/buildScripts/configure_mkxpz.sh
@@ -287,7 +288,8 @@ having issues with the nro running on the switch. attempting to debug in the emu
    ### 3) mkxp-z itself
    clear && rm -rf build-switch && switch/buildScripts/build_mkxpz_switch.sh
 
-
+  # one liner:
+  clear && rm -rf ruby-3.2.2 libs/ruby-switch && switch/buildScripts/build_ruby_switch.sh && switch/buildScripts/configure_mkxpz.sh && clear && rm -rf build-switch && switch/buildScripts/build_mkxpz_switch.sh
 # Finding the log like issue: 
 EX: 
 ```

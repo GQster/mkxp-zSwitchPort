@@ -33,13 +33,48 @@ fi
 # 1. Build PhysicsFS
 # ────────────────────────────────────────────────────────────
 echo ">>> Building PhysicsFS for Switch..."
-if [ ! -d "physfs-src" ]; then
-    git clone --depth 1 --branch release-3.2.0 https://github.com/icculus/physfs.git physfs-src
-    sed -i '/#elif defined(__APPLE__)/i #elif defined(__SWITCH__)\n#  define PHYSFS_PLATFORM_UNIX' physfs-src/src/physfs_platforms.h
+if [ ! -d "${TOPDIR}/physfs-src" ]; then
+    git clone --depth 1 --branch release-3.2.0 https://github.com/icculus/physfs.git "${TOPDIR}/physfs-src"
+    sed -i '/#elif defined(__APPLE__)/i #elif defined(__SWITCH__)\n#  define PHYSFS_PLATFORM_UNIX' "${TOPDIR}/physfs-src/src/physfs_platforms.h"
 fi
-rm -rf physfs-build
+rm -rf "${TOPDIR}/physfs-build"
 
-cmake -S physfs-src -B physfs-build \
+# ────────────────────────────────────────────────────────────
+# Patch PhysFS for Nintendo Switch (idempotent)
+# Hardcode base/pref directory so PHYSFS_init doesn't fail.
+# ────────────────────────────────────────────────────────────
+PHYSFS_UNIX_C="${TOPDIR}/physfs-src/src/physfs_platform_unix.c"
+
+if ! grep -q "PHYSFS_SWITCH_BASEDIR_PATCH" "$PHYSFS_UNIX_C"; then
+    echo ">>> Applying Switch PhysFS base/pref dir patch..."
+
+    # Insert override into __PHYSFS_platformCalcBaseDir
+    sed -i '/char *__PHYSFS_platformCalcBaseDir/a \
+/* PHYSFS_SWITCH_BASEDIR_PATCH */\
+#ifdef __SWITCH__\
+    const char *basePath = "sdmc:/switch/mkxp-z/";\
+    char *retval = (char *) allocator.Malloc(strlen(basePath) + 1);\
+    if (retval) strcpy(retval, basePath);\
+    return retval;\
+#endif\
+' "$PHYSFS_UNIX_C"
+
+    # Insert override into __PHYSFS_platformCalcPrefDir
+    sed -i '/char *__PHYSFS_platformCalcPrefDir/a \
+/* PHYSFS_SWITCH_BASEDIR_PATCH */\
+#ifdef __SWITCH__\
+    const char *prefPath = "sdmc:/switch/mkxp-z/";\
+    char *retval = (char *) allocator.Malloc(strlen(prefPath) + 1);\
+    if (retval) strcpy(retval, prefPath);\
+    return retval;\
+#endif\
+' "$PHYSFS_UNIX_C"
+
+else
+    echo ">>> Switch PhysFS patch already applied."
+fi
+
+cmake -S "${TOPDIR}/physfs-src" -B "${TOPDIR}/physfs-build" \
     -DCMAKE_SYSTEM_NAME=Generic \
     -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
     -DCMAKE_C_COMPILER=${DEVKITARM}/bin/aarch64-none-elf-gcc \
@@ -61,18 +96,18 @@ make -C physfs-build install
 # 2. Build SDL_sound
 # ────────────────────────────────────────────────────────────
 echo ">>> Building SDL_sound for Switch..."
-if [ ! -d "SDL_sound-src" ]; then
-    git clone --depth 1 --branch v2.0.1 https://github.com/icculus/SDL_sound.git SDL_sound-src
+if [ ! -d "${TOPDIR}/SDL_sound-src" ]; then
+    git clone --depth 1 --branch v2.0.1 https://github.com/icculus/SDL_sound.git "${TOPDIR}/SDL_sound-src"
 fi
 
 echo ">>> Removing all SDL_sound example targets and references..."
 # Remove any line referencing playsound or playsound_simple
-sed -i '/playsound/d' SDL_sound-src/CMakeLists.txt
-sed -i '/playsound_simple/d' SDL_sound-src/CMakeLists.txt
+sed -i '/playsound/d' "${TOPDIR}/SDL_sound-src/CMakeLists.txt"
+sed -i '/playsound_simple/d' "${TOPDIR}/SDL_sound-src/CMakeLists.txt"
 
-rm -rf SDL_sound-build
+rm -rf "${TOPDIR}/SDL_sound-build"
 
-cmake -S SDL_sound-src -B SDL_sound-build \
+cmake -S "${TOPDIR}/SDL_sound-src" -B "${TOPDIR}/SDL_sound-build" \
     -DCMAKE_SYSTEM_NAME=Generic \
     -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
     -DCMAKE_C_COMPILER=${DEVKITARM}/bin/aarch64-none-elf-gcc \
@@ -90,8 +125,8 @@ cmake -S SDL_sound-src -B SDL_sound-build \
     -DCMAKE_CXX_FLAGS="${CXXFLAGS}" \
     -DCMAKE_EXE_LINKER_FLAGS="-specs=${DEVKITPRO}/libnx/switch.specs -L${DEVKITPRO}/libnx/lib -L${DEVKITPRO}/portlibs/switch/lib -lnx -lm"
 
-make -C SDL_sound-build -j"$(nproc)"
-make -C SDL_sound-build install
+make -C "${TOPDIR}/SDL_sound-build" -j"$(nproc)"
+make -C "${TOPDIR}/SDL_sound-build" install
 
 echo
 echo "✅ Dependency build complete!"
