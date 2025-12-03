@@ -16,10 +16,10 @@ export DEVKITPRO=/opt/devkitpro
 export DEVKITARM=${DEVKITPRO}/devkitA64
 export PATH=${DEVKITARM}/bin:${DEVKITPRO}/tools/bin:$PATH
 
-export ROOT=$(cd "$(dirname "$0")/.." && pwd)
+export ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 BUILD=${ROOT}/build-switch
 LIBS=${ROOT}/libs
-CROSS_FILE=${ROOT}/switch_port/switch.ini
+CROSS_FILE=${ROOT}/switch/switch.ini
 
 # ──────────────────────────────────────────────────────────────
 # CRITICAL: Force pkg-config to ONLY use Switch libraries
@@ -65,9 +65,10 @@ if [ -d "${BUILD}" ]; then
     echo "🧹 Cleaning previous build directory..."
     rm -rf "${BUILD}" 2>/dev/null || echo "  ⚠️  Some files couldn't be removed, continuing..."
 fi
-if [ -d "${ROOT}/switch" ]; then
-    rm -rf "${ROOT}/switch" 2>/dev/null || echo "  ⚠️  Some switch files couldn't be removed, continuing..."
-fi
+# DONT REMOVE THE FULL SWITCH DIR ANYMORE!
+# if [ -d "${ROOT}/switch" ]; then
+#     rm -rf "${ROOT}/switch" 2>/dev/null || echo "  ⚠️  Some switch files couldn't be removed, continuing..."
+# fi
 
 # ──────────────────────────────────────────────────────────────
 # Patch mkxp-z source for Switch compatibility
@@ -394,8 +395,9 @@ echo ""
 echo "🔧 Creating Switch platform stubs..."
 
 # ALWAYS delete and recreate - no conditions
-rm -rf "${ROOT}/switch"
-mkdir -p "${ROOT}/switch"
+# DONT REMOVE THE FULL SWITCH DIR ANYMORE!
+# rm -rf "${ROOT}/switch"
+# mkdir -p "${ROOT}/switch"
 
 # NOW create the ruby/assert.h wrapper inside the new switch/ dir
 # libnx's service.h tries to include ruby/assert.h, which causes
@@ -855,7 +857,7 @@ if command -v nacptool > /dev/null 2>&1 && command -v elf2nro > /dev/null 2>&1; 
         # Generate .nro with .nacp
         elf2nro "${BUILD}/mkxp-z" "${BUILD}/mkxp-z.nro" \
             --nacp="${BUILD}/mkxp-z.nacp" \
-            --romfsdir="${ROOT}/switch_port/romfs-root"
+            --romfsdir="${ROOT}/switch/romfs-root"
         if [ -f "${BUILD}/mkxp-z.nro" ]; then
             echo "  ✅ Generated: ${BUILD}/mkxp-z.nro"
         else

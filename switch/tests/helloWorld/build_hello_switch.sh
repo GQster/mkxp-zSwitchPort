@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-cd /workspace/switch_port/tests/helloWorld
+cd /workspace/switch/tests/helloWorld
 
 echo "[1/4] Compiling hello.elf"
 aarch64-none-elf-gcc -fPIE hello.c \

@@ -63,7 +63,7 @@ docker run -it --rm \
 or one line: 
 
 ```
-docker build -t switch-dev switch_port/. && xhost +local: && docker run -it --rm   -e DISPLAY=$DISPLAY   -v /tmp/.X11-unix:/tmp/.X11-unix   -v "$(pwd)":/workspace   switch-dev
+docker build -t switch-dev switch/buildScrips/. && xhost +local: && docker run -it --rm   -e DISPLAY=$DISPLAY   -v /tmp/.X11-unix:/tmp/.X11-unix   -v "$(pwd)":/workspace   switch-dev
 ```
 
 You’re now inside the build environment at /workspace.
@@ -109,11 +109,12 @@ libs/SDL_sound-switch/lib/libSDL2_sound.a
 ### 🗂 Directory Layout After This Milestone
 ```
 mkxp-z-switch/
-└─ switch_port/
-    ├─ build_ruby_switch.sh
-    ├─ configure_mkxpz.sh
-    ├─ dockerfile
-    ├─ switch.ini
+└─ switch/
+  └─ buildScripts/
+      ├─ build_ruby_switch.sh
+      ├─ configure_mkxpz.sh
+      ├─ dockerfile
+      ├─ switch.ini
 └─ libs/
    ├─ ruby-switch/
    │   └─ lib/libruby-static.a

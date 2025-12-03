@@ -196,8 +196,8 @@ Bottom line
 | **Cross-Compilation Setup** | ✅ **Complete** | • `switch.ini` Meson cross-file created<br>• Toolchain: `aarch64-none-elf-gcc` (GCC 15.1.0)<br>• Flags: `-march=armv8-a -mtune=cortex-a57 -D__SWITCH__` |
 | **PhysFS Build** | ✅ **Complete** | • Version: 3.2.0<br>• Patched for Switch POSIX mode<br>• Output: `libs/physfs-switch/lib/libphysfs.a`<br>• Automated via `configure_mkxpz.sh` |
 | **SDL_sound Build** | ✅ **Complete** | • Version: 2.0.1<br>• Examples removed, static-only<br>• Patched `sdl2.pc` (removed invalid EGL libs)<br>• Output: `libs/SDL_sound-switch/lib/libSDL2_sound.a` |
-| **Ruby 3.2 Cross-Compilation** | 🔄 **Complete** | switch_port/build_ruby_switch.sh| 
-| **mkxp‑z Switch Build** | ✅ **Complete** | • `switch_port/build_mkxpz_switch.sh` fully automates:<br>  – All patch operations for filesystem, asserts, and net stubs<br>  – Meson + Ninja cross‑build producing `build-switch/mkxp-z`<br>  – `.nacp` metadata and `.nro` packaging<br>• Output: `build-switch/mkxp-z.nro` runs in Flatpak Ryujinx ✔ |
+| **Ruby 3.2 Cross-Compilation** | 🔄 **Complete** | switch/buildScripts/build_ruby_switch.sh| 
+| **mkxp‑z Switch Build** | ✅ **Complete** | • `switch/buildScripts/build_mkxpz_switch.sh` fully automates:<br>  – All patch operations for filesystem, asserts, and net stubs<br>  – Meson + Ninja cross‑build producing `build-switch/mkxp-z`<br>  – `.nacp` metadata and `.nro` packaging<br>• Output: `build-switch/mkxp-z.nro` runs in Flatpak Ryujinx ✔ |
 | **Emulator Verification** | ✅ **Complete** | • HelloWorld NRO and mkxp‑z NRO load in Ryujinx (firmware 21.0.0)<br>• Proper NACP inclusion prevents LibHac crash<br>• Logs stream to `sdmc:/hello_log.txt` and `sdmc:/mkxpz_log.txt` |
 | **On‑Device Testing Prep** | ⚙️ **In Progress** | • mkxp‑z NRO packaged for `/switch/mkxp-z/`<br>• Ready to deploy to real Switch via hbmenu for first run tests |
 
@@ -241,8 +241,6 @@ having issues with the nro running on the switch. attempting to debug in the emu
    - stubbed: switch/switch_time_stub.c   
 
 
-   ### Current problem:
-      realized im duplicated code in the switch_port folder. like physfs, ruby 3.2.2, sdl_sound, etc. NEED TO SWITCH TO NOT DUPLICATE CODE
 
 
 ### 🧩 Resolved Issues
@@ -263,7 +261,7 @@ having issues with the nro running on the switch. attempting to debug in the emu
 
 # cmds:
 
-   clear && docker build -t switch-dev switch_port/. && xhost +local: && docker run -it --rm   -e DISPLAY=$DISPLAY   -v /tmp/.X11-unix:/tmp/.X11-unix   -v "$(pwd)":/workspace   switch-dev
+   clear && docker build -t switch-dev switch/buildScripts/. && xhost +local: && docker run -it --rm   -e DISPLAY=$DISPLAY   -v /tmp/.X11-unix:/tmp/.X11-unix   -v "$(pwd)":/workspace   switch-dev
 
 
 # Clean start:
@@ -271,16 +269,17 @@ having issues with the nro running on the switch. attempting to debug in the emu
    cd /workspace
 
    ### 1) Ruby: make sure we’re using the new -fPIC build
-   clear && rm -rf ruby-3.2.2 libs/ruby-switch && switch_port/build_ruby_switch.sh
+   clear && rm -rf ruby-3.2.2 libs/ruby-switch && switch/buildScripts/build_ruby_switch.sh
 
    ### 2) PhysFS + SDL_sound with -fPIC
+   //dont run this i think      rm -rf physfs-src physfs-build libs/physfs-switch
+   //dont run this i think      rm -rf SDL_sound-src SDL_sound-build libs/SDL_sound-switch
+   
    clear
-   rm -rf physfs-src physfs-build libs/physfs-switch
-   rm -rf SDL_sound-src SDL_sound-build libs/SDL_sound-switch
-   switch_port/configure_mkxpz.sh
+   switch/buildScripts/configure_mkxpz.sh
 
    ### 3) mkxp-z itself
-   clear && rm -rf build-switch &&switch_port/build_mkxpz_switch.sh
+   clear && rm -rf build-switch && switch/buildScripts/build_mkxpz_switch.sh
 
 
 # Finding the log like issue: 
@@ -315,7 +314,7 @@ switch.ini
 src/main.cpp
 src.meson.build
 binding/meson.build
-switch_port/assert_wrapper.h
+switch/assert_wrapper.h
 
 
 

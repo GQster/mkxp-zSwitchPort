@@ -5,7 +5,7 @@
 📋 Build Configuration:
   • Source:      /workspace
   • Build Dir:   /workspace/build-switch
-  • Cross File:  /workspace/switch_port/switch.ini
+  • Cross File:  /workspace/switch/switch.ini
   • Toolchain:   /opt/devkitpro/devkitA64
 
 🔍 Verifying custom libraries...
