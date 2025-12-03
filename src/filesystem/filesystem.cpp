@@ -282,9 +282,6 @@ struct FileSystemPrivate {
 
 static void throwPhysfsError(const char *desc) {
   PHYSFS_ErrorCode ec = PHYSFS_getLastErrorCode();
-  printf("throwPhysfsError: desc='%s', ec=%d\n", desc, (int)ec);
-  fflush(stdout);
-
   const char *englishStr;
     if (ec == 0) {
         // Sometimes on Windows PHYSFS_init can return null
@@ -294,32 +291,12 @@ static void throwPhysfsError(const char *desc) {
         englishStr = PHYSFS_getErrorByCode(ec);
     }
 
-  printf("throwPhysfsError: message='%s'\n", englishStr);
-  fflush(stdout);
-
   throw Exception(Exception::PHYSFSError, "%s: %s", desc, englishStr);
 }
 
 FileSystem::FileSystem(const char *argv0, bool allowSymlinks) {
-#ifdef __SWITCH__
-  // PhysFS only needs a non-null "program name" for base dir detection.
-  // On Switch, argv0 is meaningless anyway, so just give it a dummy.
-  const char *physfsArgv = "mkxp-z";
-#else
-  const char *physfsArgv = argv0;
-#endif
-
-  printf("FileSystem::FileSystem: enter, argv0='%s', allowSymlinks=%d, physfsArgv='%s'\n",
-         argv0 ? argv0 : "(null)", (int)allowSymlinks, physfsArgv);
-  fflush(stdout);
-
-  if (PHYSFS_init(physfsArgv) == 0) {
-    printf("FileSystem::FileSystem: PHYSFS_init FAILED\n");
-    fflush(stdout);
+  if (PHYSFS_init(argv0) == 0)
     throwPhysfsError("Error initializing PhysFS");
-  }
-  printf("FileSystem::FileSystem: after PHYSFS_init\n");
-  fflush(stdout);
 
   /* One error (=return 0) turns the whole product to 0 */
 
@@ -329,23 +306,14 @@ FileSystem::FileSystem(const char *argv0, bool allowSymlinks) {
   er *= PHYSFS_registerArchiver(&RGSS2_Archiver);
   er *= PHYSFS_registerArchiver(&RGSS3_Archiver);
 
-  printf("FileSystem::FileSystem: after registerArchiver, er=%d\n", er);
-  fflush(stdout);
-
-  if (er == 0) {
-    printf("FileSystem::FileSystem: registerArchiver FAILED\n");
-    fflush(stdout);
+  if (er == 0)
     throwPhysfsError("Error registering PhysFS RGSS archiver");
-  }
 
   p = new FileSystemPrivate;
   p->havePathCache = false;
 
   if (allowSymlinks)
     PHYSFS_permitSymbolicLinks(1);
-
-  printf("FileSystem::FileSystem: exit\n");
-  fflush(stdout);
 }
 
 FileSystem::~FileSystem() {

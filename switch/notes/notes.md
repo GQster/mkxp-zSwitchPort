@@ -201,16 +201,6 @@ Bottom line
 | **Emulator Verification** | ✅ **Complete** | • HelloWorld NRO and mkxp‑z NRO load in Ryujinx (firmware 21.0.0)<br>• Proper NACP inclusion prevents LibHac crash<br>• Logs stream to `sdmc:/hello_log.txt` and `sdmc:/mkxpz_log.txt` |
 | **On‑Device Testing Prep** | ⚙️ **In Progress** | • mkxp‑z NRO packaged for `/switch/mkxp-z/`<br>• Ready to deploy to real Switch via hbmenu for first run tests |
 
-### Now, on Switch (and in Ryujinx, where sdmc:/ is the Flatpak sdcard folder), mkxp‑z will always look for Game.ini in:
-   ```
-   ~/.var/app/io.github.ryubing.Ryujinx/config/Ryujinx/sdcard/switch/
-   sdmc:/switch/mkxp-z/Game.ini
-   ```
-set in 
-   ```src/main.cpp```
-line 
-   ```strncpy(dataDir, "sdmc:/switch/mkxp-z", sizeof(dataDir));```
-
 ---
 
 ## 3. Immediate Next Steps (Current Challenge)
@@ -238,8 +228,24 @@ having issues with the nro running on the switch. attempting to debug in the emu
     ```
   - Implement Joy‑Con‑to‑RGSS key mapping (`A→C`, `B→B`, `Plus→F12`, etc.) consistent with EasyRPG mapping.
 
-   - stubbed: switch/switch_time_stub.c   
+   - The crash is now very clear from the addr2line output:
+      switch error code: 2168-0002 (0x4a8)
 
+      crash log:
+      text
+      0x1173d0 -> libnx time.c:63
+      0x117268 -> libnx time.c:192
+      0x00ac   -> libnx runtime/devices/socket.c:948
+      So the fault is:
+
+      In libnx’s time service code, called from
+      libnx’s socket device code, which matches our use of socketInitializeDefault().
+      And since we never see any of your prints, the crash is happening during that early socket/time init, before we reach your own logging.
+
+      Given that, the simplest next step is:
+      Stop calling socketInitializeDefault() (and nxlinkStdio()) for now and see if mkxp‑z runs without crashing.
+
+   - stubbed: switch/switch_time_stub.c   
 
 
 
