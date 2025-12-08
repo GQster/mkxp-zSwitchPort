@@ -295,8 +295,21 @@ static void throwPhysfsError(const char *desc) {
 }
 
 FileSystem::FileSystem(const char *argv0, bool allowSymlinks) {
-  if (PHYSFS_init(argv0) == 0)
+#ifdef __SWITCH__
+  // PhysFS only needs a non-null "program name" for base dir detection.
+  // On Switch, argv0 is meaningless anyway, so just give it a dummy.
+  const char *physfsArgv = "mkxp-z";
+#else
+  const char *physfsArgv = argv0;
+#endif
+
+
+  if (PHYSFS_init(physfsArgv) == 0) {
+    printf("FileSystem::FileSystem: PHYSFS_init FAILED\n");
+    fflush(stdout);
     throwPhysfsError("Error initializing PhysFS");
+  }
+  fflush(stdout);
 
   /* One error (=return 0) turns the whole product to 0 */
 
@@ -306,8 +319,14 @@ FileSystem::FileSystem(const char *argv0, bool allowSymlinks) {
   er *= PHYSFS_registerArchiver(&RGSS2_Archiver);
   er *= PHYSFS_registerArchiver(&RGSS3_Archiver);
 
-  if (er == 0)
+  printf("FileSystem::FileSystem: after registerArchiver, er=%d\n", er);
+  fflush(stdout);
+
+  if (er == 0) {
+    printf("FileSystem::FileSystem: registerArchiver FAILED\n");
+    fflush(stdout);
     throwPhysfsError("Error registering PhysFS RGSS archiver");
+  }
 
   p = new FileSystemPrivate;
   p->havePathCache = false;

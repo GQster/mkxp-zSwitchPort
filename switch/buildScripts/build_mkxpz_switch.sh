@@ -75,25 +75,29 @@ fi
 # ──────────────────────────────────────────────────────────────
 echo "🔧 Patching mkxp-z source for Switch compatibility..."
 
-# Fix strdup in eventthread.cpp
-if ! grep -q "switch_compat.h" "${ROOT}/src/eventthread.cpp"; then
-    cat > "${ROOT}/src/switch_compat.h" << 'EOF'
+# Fix strdup in eventthread.cpp - create/update switch_compat.h
+cat > "${ROOT}/src/switch_compat.h" << 'EOF'
 #ifndef SWITCH_COMPAT_H
 #define SWITCH_COMPAT_H
 #ifdef __SWITCH__
 #include <cstring>
 #include <cstdlib>
-#ifndef strdup
+
+// strdup is not available in C++ standard library on Switch
+// Provide our own implementation
 inline char* strdup(const char* s) {
-    size_t len = strlen(s) + 1;
-    char* copy = (char*)malloc(len);
-    if (copy) memcpy(copy, s, len);
+    if (!s) return nullptr;
+    std::size_t len = std::strlen(s) + 1;
+    char* copy = (char*)std::malloc(len);
+    if (copy) std::memcpy(copy, s, len);
     return copy;
 }
-#endif
-#endif
-#endif
+
+#endif /* __SWITCH__ */
+#endif /* SWITCH_COMPAT_H */
 EOF
+
+if ! grep -q "switch_compat.h" "${ROOT}/src/eventthread.cpp"; then
     sed -i '1i#include "switch_compat.h"' "${ROOT}/src/eventthread.cpp"
     echo "  ✓ Patched eventthread.cpp for strdup"
 fi
@@ -233,6 +237,62 @@ if ! grep -q "SWITCH_HTTPLIB_PATCH" "${HTTPLIB}"; then
     rm "${HTTPLIB}.bak"
 
     echo "  ✓ Wrapped problematic headers in httplib.h"
+fi
+
+# ──────────────────────────────────────────────────────────────
+# Patch OpenAL includes for Switch
+# ──────────────────────────────────────────────────────────────
+echo "🔧 Patching OpenAL includes for Switch..."
+
+# Patch al-util.h
+AL_UTIL="${ROOT}/src/audio/al-util.h"
+if ! grep -q "SWITCH_OPENAL_PATCH" "${AL_UTIL}"; then
+    cp "${AL_UTIL}" "${AL_UTIL}.bak"
+    sed -i 's|#include <al.h>|#ifdef __SWITCH__\n#include <AL/al.h>\n#else\n#include <al.h>\n#endif|' "${AL_UTIL}.bak"
+    sed -i 's|#include <alext.h>|#ifdef __SWITCH__\n#include <AL/alext.h>\n#else\n#include <alext.h>\n#endif|' "${AL_UTIL}.bak"
+    echo "// SWITCH_OPENAL_PATCH" > "${AL_UTIL}"
+    cat "${AL_UTIL}.bak" >> "${AL_UTIL}"
+    rm "${AL_UTIL}.bak"
+    echo "  ✓ Patched al-util.h for Switch OpenAL paths"
+fi
+
+# Patch eventthread.cpp
+EVENTTHREAD="${ROOT}/src/eventthread.cpp"
+if ! grep -q "SWITCH_OPENAL_PATCH" "${EVENTTHREAD}"; then
+    cp "${EVENTTHREAD}" "${EVENTTHREAD}.bak"
+    sed -i 's|#include <al.h>|#ifdef __SWITCH__\n#include <AL/al.h>\n#else\n#include <al.h>\n#endif|' "${EVENTTHREAD}.bak"
+    sed -i 's|#include <alc.h>|#ifdef __SWITCH__\n#include <AL/alc.h>\n#else\n#include <alc.h>\n#endif|' "${EVENTTHREAD}.bak"
+    sed -i 's|#include <alext.h>|#ifdef __SWITCH__\n#include <AL/alext.h>\n#else\n#include <alext.h>\n#endif|' "${EVENTTHREAD}.bak"
+    sed -i '/#include "switch_compat.h"/a // SWITCH_OPENAL_PATCH' "${EVENTTHREAD}.bak"
+    cp "${EVENTTHREAD}.bak" "${EVENTTHREAD}"
+    rm "${EVENTTHREAD}.bak"
+    echo "  ✓ Patched eventthread.cpp for Switch OpenAL paths"
+fi
+
+# Patch main.cpp
+MAIN_CPP="${ROOT}/src/main.cpp"
+if ! grep -q "SWITCH_OPENAL_PATCH" "${MAIN_CPP}"; then
+    cp "${MAIN_CPP}" "${MAIN_CPP}.bak"
+    sed -i 's|#include <alc.h>|#ifdef __SWITCH__\n#include <AL/alc.h>\n#else\n#include <alc.h>\n#endif|' "${MAIN_CPP}.bak"
+    sed -i '/#include "icon.png.xxd"/a // SWITCH_OPENAL_PATCH' "${MAIN_CPP}.bak"
+    cp "${MAIN_CPP}.bak" "${MAIN_CPP}"
+    rm "${MAIN_CPP}.bak"
+    echo "  ✓ Patched main.cpp for Switch OpenAL paths"
+fi
+
+# ──────────────────────────────────────────────────────────────
+# Patch uchardet includes for Switch
+# ──────────────────────────────────────────────────────────────
+echo "🔧 Patching uchardet includes for Switch..."
+
+ENCODING_H="${ROOT}/src/util/encoding.h"
+if ! grep -q "SWITCH_UCHARDET_PATCH" "${ENCODING_H}"; then
+    cp "${ENCODING_H}" "${ENCODING_H}.bak"
+    sed -i 's|#include <uchardet.h>|#ifdef __SWITCH__\n#include <uchardet/uchardet.h>\n#else\n#include <uchardet.h>\n#endif|' "${ENCODING_H}.bak"
+    echo "// SWITCH_UCHARDET_PATCH" > "${ENCODING_H}"
+    cat "${ENCODING_H}.bak" >> "${ENCODING_H}"
+    rm "${ENCODING_H}.bak"
+    echo "  ✓ Patched encoding.h for Switch uchardet path"
 fi
 
 echo ""
@@ -505,130 +565,7 @@ HTTPEOF
 
 cat > "${ROOT}/switch/switch_posix_stubs.c" << 'POSIXEOF'
 #ifdef __SWITCH__
-#include <stdio.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <pwd.h>
-#include <signal.h>
-#include <errno.h>
-
-// pthread_kill stub
-int pthread_kill(pthread_t thread, int sig) {
-    (void)thread; (void)sig;
-    return 0; // Success
-}
-
-// sysconf stub
-long sysconf(int name) {
-    (void)name;
-    return 0; // Return 0 for most things
-}
-
-// getuid stub
-uid_t getuid(void) {
-    return 0; // Root/Single user
-}
-
-// getpwuid stub
-struct passwd *getpwuid(uid_t uid) {
-    (void)uid;
-    return NULL; // No password entry
-}
-
-// pipe stub
-int pipe(int pipefd[2]) {
-    (void)pipefd;
-    errno = ENOSYS;
-    return -1;
-}
-
-// geteuid stub
-uid_t geteuid(void) {
-    return 0;
-}
-
-// getgid stub
-gid_t getgid(void) {
-    return 0;
-}
-
-// getegid stub
-gid_t getegid(void) {
-    return 0;
-}
-
-// waitpid stub
-pid_t waitpid(pid_t pid, int *status, int options) {
-    (void)pid; (void)status; (void)options;
-    errno = ECHILD;
-    return -1;
-}
-
-// umask stub
-mode_t umask(mode_t mask) {
-    (void)mask;
-    return 0;
-}
-
-// execv stub
-int execv(const char *path, char *const argv[]) {
-    (void)path; (void)argv;
-    errno = ENOSYS;
-    return -1;
-}
-
-// getppid stub
-pid_t getppid(void) {
-    return 0;
-}
-
-// getpwnam stub
-struct passwd *getpwnam(const char *name) {
-    (void)name;
-    return NULL;
-}
-
-// endpwent stub
-void endpwent(void) {
-}
-
-// execl stub
-int execl(const char *path, const char *arg, ...) {
-    (void)path; (void)arg;
-    errno = ENOSYS;
-    return -1;
-}
-
-// execle stub
-int execle(const char *path, const char *arg, ...) {
-    (void)path; (void)arg;
-    errno = ENOSYS;
-    return -1;
-}
-
-// rb_mjit_fork stub (Ruby MJIT)
-pid_t rb_mjit_fork(void) {
-    errno = ENOSYS;
-    return -1;
-}
-
-// chown stub
-int chown(const char *pathname, uid_t owner, gid_t group) {
-    (void)pathname; (void)owner; (void)group;
-    return 0;
-}
-
-// popen stub
-FILE *popen(const char *command, const char *type) {
-    (void)command; (void)type;
-    return NULL;
-}
-
-// pclose stub
-int pclose(FILE *stream) {
-    (void)stream;
-    return -1;
-}
+// Stubs are now provided by libruby-static.a (switch_shim.o)
 #endif
 POSIXEOF
 

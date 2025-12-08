@@ -23,8 +23,13 @@
 #ifndef ALUTIL_H
 #define ALUTIL_H
 
+#ifdef __SWITCH__
+// SWITCH_OPENAL_PATCH
+#include <AL/al.h>
+#else
 #include <al.h>
 #include <alext.h>
+#endif
 
 #include <SDL_audio.h>
 #include <assert.h>

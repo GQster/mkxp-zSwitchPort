@@ -3,13 +3,16 @@
 #ifdef __SWITCH__
 #include <cstring>
 #include <cstdlib>
-#ifndef strdup
+
+// strdup is not available in C++ standard library on Switch
+// Provide our own implementation
 inline char* strdup(const char* s) {
-    size_t len = strlen(s) + 1;
-    char* copy = (char*)malloc(len);
-    if (copy) memcpy(copy, s, len);
+    if (!s) return nullptr;
+    std::size_t len = std::strlen(s) + 1;
+    char* copy = (char*)std::malloc(len);
+    if (copy) std::memcpy(copy, s, len);
     return copy;
 }
-#endif
-#endif
-#endif
+
+#endif /* __SWITCH__ */
+#endif /* SWITCH_COMPAT_H */

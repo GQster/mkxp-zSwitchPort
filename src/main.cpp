@@ -21,9 +21,14 @@
 
 #ifndef MKXPZ_BUILD_XCODE
 #include "icon.png.xxd"
+// SWITCH_OPENAL_PATCH
 #endif
 
+#ifdef __SWITCH__
+#include <AL/alc.h>
+#else
 #include <alc.h>
+#endif
 
 #include <SDL.h>
 #include <SDL_image.h>

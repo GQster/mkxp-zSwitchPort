@@ -105,6 +105,7 @@ struct SharedStatePrivate
 	SharedStatePrivate(RGSSThreadData *threadData)
 	    : bindingData(0),
 	      sdlWindow(threadData->window),
+          screen(nullptr),
 	      fileSystem(threadData->argv0, threadData->config.allowSymlinks),
 	      eThread(*threadData->ethread),
 	      rtData(*threadData),
@@ -114,9 +115,26 @@ struct SharedStatePrivate
 	      input(*threadData),
 	      audio(*threadData),
 	      _glState(threadData->config),
+          shaders(),
+          texPool(),
 	      fontState(threadData->config),
-	      stampCounter(0)
-	{}
+          defaultFont(nullptr),
+          globalTex(),
+          globalTexW(0),
+          globalTexH(0),
+          globalTexDirty(false),
+          gpTexFBO(),
+          atlasTex(),
+          gpQuad(),
+          stampCounter(0),
+          startupTime()
+	 {
+        printf("SharedStatePrivate::ctor: begin\n"); fflush(stdout);
+        printf("  threadData=%p, window=%p\n",
+               (void*)threadData, (void*)threadData->window);
+        fflush(stdout);
+        printf("SharedStatePrivate::ctor: end\n"); fflush(stdout);
+    }
 	
 	void init(RGSSThreadData *threadData)
 	{

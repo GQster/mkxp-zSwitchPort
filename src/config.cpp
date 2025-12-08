@@ -152,7 +152,68 @@ json::value readConfFile(const char *path) {
 
 #define CONF_FILE "mkxp.json"
 
-Config::Config() {}
+Config::Config()
+    : rgssVersion(0),
+      debugMode(false),
+      winConsole(false),
+      preferMetalRenderer(false),
+      displayFPS(false),
+      printFPS(false),
+      winResizable(true),
+      fullscreen(false),
+      fixedAspectRatio(true),
+      smoothScaling(0),
+      smoothScalingDown(0),
+      bitmapSmoothScaling(0),
+      bitmapSmoothScalingDown(0),
+      smoothScalingMipmaps(false),
+      bicubicSharpness(100),
+#ifdef MKXPZ_SSL
+      xbrzScalingFactor(1.0),
+#endif
+      enableHires(false),
+      textureScalingFactor(1.0),
+      framebufferScalingFactor(1.0),
+      atlasScalingFactor(1.0),
+      vsync(false),
+      defScreenW(640),
+      defScreenH(480),
+      fixedFramerate(0),
+      frameSkip(false),
+      syncToRefreshrate(false),
+      subImageFix(false),
+      enableBlitting(true),
+      maxTextureSize(0),
+      manualFolderSelect(false),
+      anyAltToggleFS(false),
+      enableReset(true),
+      enableSettings(true),
+      allowSymlinks(true),
+      pathCache(true),
+      execName("Game"),
+      useScriptNames(true),
+      dumpAtlas(false)
+{
+    // Initialize nested structs
+    integerScaling.active = false;
+    integerScaling.lastMileScaling = true;
+    
+    midi.chorus = false;
+    midi.reverb = false;
+    
+    SE.sourceCount = 6;
+    BGM.trackCount = 1;
+    
+    editor.debug = false;
+    editor.battleTest = false;
+    
+    jit.enabled = false;
+    jit.verboseLevel = 0;
+    jit.maxCache = 100;
+    jit.minCalls = 10000;
+    
+    yjit.enabled = false;
+}
 
 void Config::read(int argc, char *argv[]) {
     auto optsJ = json::object({

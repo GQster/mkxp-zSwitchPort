@@ -40,38 +40,160 @@ fi
 rm -rf "${TOPDIR}/physfs-build"
 
 # ────────────────────────────────────────────────────────────
+# Patch PhysFS platforms.h to recognize Nintendo Switch (idempotent)
+# ────────────────────────────────────────────────────────────
+PHYSFS_PLATFORMS_H="${TOPDIR}/physfs-src/src/physfs_platforms.h"
+
+if ! grep -q "__SWITCH__" "$PHYSFS_PLATFORMS_H"; then
+    echo ">>> Applying Switch platform definition patch to physfs_platforms.h..."
+    sed -i '/#elif defined(__QNX__)/i #elif defined(__SWITCH__)\n#  define PHYSFS_NO_CDROM_SUPPORT 1\n#  define PHYSFS_PLATFORM_UNIX 1\n#  define PHYSFS_PLATFORM_POSIX 1' "$PHYSFS_PLATFORMS_H"
+else
+    echo ">>> Switch platform definition already in physfs_platforms.h"
+fi
+
+# ────────────────────────────────────────────────────────────
 # Patch PhysFS for Nintendo Switch (idempotent)
-# Hardcode base/pref directory so PHYSFS_init doesn't fail.
+# Return "./" to let PhysFS use current directory.
+# PhysFS requires paths to end with a directory separator.
+# This works in both Ryujinx (current dir) and real Switch (libnx sets cwd).
 # ────────────────────────────────────────────────────────────
 PHYSFS_UNIX_C="${TOPDIR}/physfs-src/src/physfs_platform_unix.c"
 
 if ! grep -q "PHYSFS_SWITCH_BASEDIR_PATCH" "$PHYSFS_UNIX_C"; then
     echo ">>> Applying Switch PhysFS base/pref dir patch..."
 
-    # Insert override into __PHYSFS_platformCalcBaseDir
-    sed -i '/char *__PHYSFS_platformCalcBaseDir/a \
+    # Patch __PHYSFS_platformCalcBaseDir - insert right after opening brace
+    sed -i '/^char \*__PHYSFS_platformCalcBaseDir(const char \*argv0)$/,/^{$/ {
+        /^{$/a\
 /* PHYSFS_SWITCH_BASEDIR_PATCH */\
 #ifdef __SWITCH__\
-    const char *basePath = "sdmc:/switch/mkxp-z/";\
-    char *retval = (char *) allocator.Malloc(strlen(basePath) + 1);\
-    if (retval) strcpy(retval, basePath);\
-    return retval;\
-#endif\
-' "$PHYSFS_UNIX_C"
+    /* On Switch, return "./" to use current directory. */\
+    /* PhysFS requires the path to end with a directory separator. */\
+    char *switch_retval = (char *) allocator.Malloc(3);\
+    if (switch_retval) strcpy(switch_retval, "./");\
+    return switch_retval;\
+#endif
+    }' "$PHYSFS_UNIX_C"
 
-    # Insert override into __PHYSFS_platformCalcPrefDir
-    sed -i '/char *__PHYSFS_platformCalcPrefDir/a \
+    # Patch __PHYSFS_platformCalcPrefDir - insert right after opening brace
+    sed -i '/^char \*__PHYSFS_platformCalcPrefDir(const char \*org, const char \*app)$/,/^{$/ {
+        /^{$/a\
 /* PHYSFS_SWITCH_BASEDIR_PATCH */\
 #ifdef __SWITCH__\
-    const char *prefPath = "sdmc:/switch/mkxp-z/";\
-    char *retval = (char *) allocator.Malloc(strlen(prefPath) + 1);\
-    if (retval) strcpy(retval, prefPath);\
-    return retval;\
-#endif\
-' "$PHYSFS_UNIX_C"
+    /* On Switch, return "./" to use current directory. */\
+    /* PhysFS requires the path to end with a directory separator. */\
+    char *switch_retval = (char *) allocator.Malloc(3);\
+    if (switch_retval) strcpy(switch_retval, "./");\
+    return switch_retval;\
+#endif
+    }' "$PHYSFS_UNIX_C"
 
 else
     echo ">>> Switch PhysFS patch already applied."
+fi
+
+# ────────────────────────────────────────────────────────────
+# Add debug logging to PHYSFS_init for Switch (idempotent)
+# ────────────────────────────────────────────────────────────
+PHYSFS_C="${TOPDIR}/physfs-src/src/physfs.c"
+
+if ! grep -q "PHYSFS_SWITCH_DEBUG_PATCH" "$PHYSFS_C"; then
+    echo ">>> Adding debug logging to PHYSFS_init..."
+    
+    # Add debug logging at the start of PHYSFS_init
+    sed -i '/^int PHYSFS_init(const char \*argv0)$/,/^{$/ {
+        /^{$/a\
+/* PHYSFS_SWITCH_DEBUG_PATCH */\
+#ifdef __SWITCH__\
+    printf("PHYSFS_init: enter, argv0=%s\\n", argv0 ? argv0 : "(null)");\
+    fflush(stdout);\
+#endif
+    }' "$PHYSFS_C"
+    
+    # Add debug logging before platformInit
+    sed -i 's/if (!__PHYSFS_platformInit())/\
+#ifdef __SWITCH__\
+    printf("PHYSFS_init: before platformInit\\n"); fflush(stdout);\
+#endif\
+    if (!__PHYSFS_platformInit())/g' "$PHYSFS_C"
+
+    # Add debug logging inside platformInit failure block
+    sed -i '/if (!__PHYSFS_platformInit())/,/^{$/ {
+        /^{$/a\
+#ifdef __SWITCH__\
+        printf("PHYSFS_init: platformInit FAILED\\n"); fflush(stdout);\
+#endif
+    }' "$PHYSFS_C"
+    
+    # Add debug logging before calculateBaseDir
+    sed -i 's/baseDir = calculateBaseDir(argv0);/\
+#ifdef __SWITCH__\
+    printf("PHYSFS_init: before calculateBaseDir\\n"); fflush(stdout);\
+#endif\
+    baseDir = calculateBaseDir(argv0);\
+#ifdef __SWITCH__\
+    printf("PHYSFS_init: baseDir=%s\\n", baseDir ? baseDir : "(null)"); fflush(stdout);\
+#endif/g' "$PHYSFS_C"
+
+    # Add debug logging to initializeMutexes failure
+    sed -i 's/if (!initializeMutexes()) goto initFailed;/\
+#ifdef __SWITCH__\
+    printf("PHYSFS_init: calling initializeMutexes\\n"); fflush(stdout);\
+#endif\
+    if (!initializeMutexes()) {\
+#ifdef __SWITCH__\
+        printf("PHYSFS_init: initializeMutexes FAILED\\n"); fflush(stdout);\
+#endif\
+        goto initFailed;\
+    }/g' "$PHYSFS_C"
+    
+else
+    echo ">>> PhysFS debug logging already added."
+fi
+
+# ────────────────────────────────────────────────────────────
+# Add debug logging to Mutex creation (idempotent)
+# ────────────────────────────────────────────────────────────
+PHYSFS_POSIX_C="${TOPDIR}/physfs-src/src/physfs_platform_posix.c"
+
+if ! grep -q "PHYSFS_SWITCH_MUTEX_DEBUG" "$PHYSFS_POSIX_C"; then
+    echo ">>> Adding debug logging to Mutex creation..."
+    
+    # Patch __PHYSFS_platformCreateMutex to log errors
+    sed -i '/^void \*__PHYSFS_platformCreateMutex(void)$/,/^{$/ {
+        /^{$/a\
+/* PHYSFS_SWITCH_MUTEX_DEBUG */\
+#ifdef __SWITCH__\
+    printf("Mutex: creating...\\n"); fflush(stdout);\
+#endif
+    }' "$PHYSFS_POSIX_C"
+
+    sed -i 's/rc = pthread_mutex_init(&m->mutex, NULL);/\
+    rc = pthread_mutex_init(\&m->mutex, NULL);\
+#ifdef __SWITCH__\
+    if (rc != 0) { printf("Mutex: pthread_mutex_init failed with rc=%d\\n", rc); fflush(stdout); }\
+#endif/g' "$PHYSFS_POSIX_C"
+
+    sed -i 's/rc = pthread_mutex_init(&m->mutex, NULL);/\
+    rc = pthread_mutex_init(\&m->mutex, NULL);\
+#ifdef __SWITCH__\
+    if (rc != 0) { printf("Mutex: pthread_mutex_init failed with rc=%d\\n", rc); fflush(stdout); }\
+#endif/g' "$PHYSFS_POSIX_C"
+
+    # Patch __PHYSFS_platformCalcUserDir to return "./"
+    sed -i '/^char \*__PHYSFS_platformCalcUserDir(void)$/,/^{$/ {
+        /^{$/a\
+/* PHYSFS_SWITCH_USERDIR_PATCH */\
+#ifdef __SWITCH__\
+    /* On Switch, return "./" to use current directory. */\
+    char *switch_retval = (char *) allocator.Malloc(3);\
+    if (switch_retval) strcpy(switch_retval, "./");\
+    return switch_retval;\
+#endif
+    }' "$PHYSFS_POSIX_C"
+
+else
+    echo ">>> PhysFS mutex debug logging already added."
 fi
 
 cmake -S "${TOPDIR}/physfs-src" -B "${TOPDIR}/physfs-build" \
@@ -125,7 +247,18 @@ cmake -S "${TOPDIR}/SDL_sound-src" -B "${TOPDIR}/SDL_sound-build" \
     -DCMAKE_CXX_FLAGS="${CXXFLAGS}" \
     -DCMAKE_EXE_LINKER_FLAGS="-specs=${DEVKITPRO}/libnx/switch.specs -L${DEVKITPRO}/libnx/lib -L${DEVKITPRO}/portlibs/switch/lib -lnx -lm"
 
-make -C "${TOPDIR}/SDL_sound-build" -j"$(nproc)"
+# Build SDL_sound with reduced parallelism to avoid file truncation errors
+# The modplug codec can cause race conditions when building in parallel with many jobs
+# Limit to 4 jobs max to avoid file corruption during library creation
+echo "  Building SDL_sound (this may take a few minutes)..."
+NPROC_COUNT=$(nproc)
+if [ "$NPROC_COUNT" -gt 4 ]; then
+    PARALLEL_JOBS=4
+else
+    PARALLEL_JOBS=$NPROC_COUNT
+fi
+make -C "${TOPDIR}/SDL_sound-build" -j${PARALLEL_JOBS}
+
 make -C "${TOPDIR}/SDL_sound-build" install
 
 echo

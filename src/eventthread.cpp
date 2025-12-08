@@ -20,6 +20,7 @@
 */
 
 #include "switch_compat.h"
+// SWITCH_OPENAL_PATCH
 #include <cassert>
 #include "eventthread.h"
 
@@ -30,9 +31,11 @@
 #include <SDL_touch.h>
 #include <SDL_rect.h>
 
+#ifdef __SWITCH__
+#include <AL/al.h>
+#else
 #include <al.h>
-#include <alc.h>
-#include <alext.h>
+#endif
 #include <cmath>
 
 #include "sharedstate.h"

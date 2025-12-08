@@ -842,13 +842,25 @@ struct GraphicsPrivate {
         rtData->config.enableHires ? (int)lround(rtData->config.framebufferScalingFactor * DEF_SCREEN_H) : DEF_SCREEN_H),
     scSize(scRes),
     winSize(rtData->config.defScreenW, rtData->config.defScreenH),
-    screen(scRes.x, scRes.y), threadData(rtData),
-    glCtx(SDL_GL_GetCurrentContext()), multithreadedMode(true),
-    frameRate(DEF_FRAMERATE), frameCount(0), brightness(255),
-    fpsLimiter(frameRate), useFrameSkip(rtData->config.frameSkip), frozen(false),
-    last_update(0), last_avg_update(0), backingScaleFactor(1), integerScaleFactor(0, 0),
+    screen(scRes.x, scRes.y),
+    threadData(rtData),
+    glCtx(SDL_GL_GetCurrentContext()),
+    multithreadedMode(true),
+    frameRate(DEF_FRAMERATE),
+    frameCount(0),
+    brightness(255),
+    fpsLimiter(frameRate),
+    useFrameSkip(rtData->config.frameSkip),
+    frozen(false),
+    last_update(0),
+    last_avg_update(0),
+    backingScaleFactor(1),
+    integerScaleFactor(0, 0),
     integerScaleActive(rtData->config.integerScaling.active),
-    integerLastMileScaling(rtData->config.integerScaling.lastMileScaling) {
+    integerLastMileScaling(rtData->config.integerScaling.lastMileScaling) 
+    {
+        printf("GraphicsPrivate::ctor: begin\n"); fflush(stdout);
+
         avgFPSData = std::vector<double>();
         avgFPSLock = SDL_CreateMutex();
         glResourceLock = SDL_CreateMutex();
