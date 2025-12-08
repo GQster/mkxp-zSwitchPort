@@ -4,6 +4,7 @@ set -e
 # ══════════════════════════════════════════════════════════════
 # 🎮 Nintendo Switch Build Script for mkxp-z
 # ══════════════════════════════════════════════════════════════
+BUILD_START_TIME=$(date +%s)
 
 echo "════════════════════════════════════════════════════════════"
 echo "  Building mkxp-z for Nintendo Switch (Homebrew)"
@@ -65,10 +66,6 @@ if [ -d "${BUILD}" ]; then
     echo "🧹 Cleaning previous build directory..."
     rm -rf "${BUILD}" 2>/dev/null || echo "  ⚠️  Some files couldn't be removed, continuing..."
 fi
-# DONT REMOVE THE FULL SWITCH DIR ANYMORE!
-# if [ -d "${ROOT}/switch" ]; then
-#     rm -rf "${ROOT}/switch" 2>/dev/null || echo "  ⚠️  Some switch files couldn't be removed, continuing..."
-# fi
 
 # ──────────────────────────────────────────────────────────────
 # Patch mkxp-z source for Switch compatibility
@@ -247,38 +244,62 @@ echo "🔧 Patching OpenAL includes for Switch..."
 # Patch al-util.h
 AL_UTIL="${ROOT}/src/audio/al-util.h"
 if ! grep -q "SWITCH_OPENAL_PATCH" "${AL_UTIL}"; then
+    echo "Applying patch to al-util.h..."
     cp "${AL_UTIL}" "${AL_UTIL}.bak"
-    sed -i 's|#include <al.h>|#ifdef __SWITCH__\n#include <AL/al.h>\n#else\n#include <al.h>\n#endif|' "${AL_UTIL}.bak"
-    sed -i 's|#include <alext.h>|#ifdef __SWITCH__\n#include <AL/alext.h>\n#else\n#include <alext.h>\n#endif|' "${AL_UTIL}.bak"
-    echo "// SWITCH_OPENAL_PATCH" > "${AL_UTIL}"
-    cat "${AL_UTIL}.bak" >> "${AL_UTIL}"
-    rm "${AL_UTIL}.bak"
+
+    # Use the defined replacement variables
+    sed -i "s|#include <al.h>|${AL_REPL_SED_SYNTAX}|" "${AL_UTIL}.bak"
+    sed -i "s|#include <alext.h>|${ALEXT_REPL_SED_SYNTAX}|" "${AL_UTIL}.bak"
+    
+    # Replace the original file and clean up the backup
+    mv "${AL_UTIL}.bak" "${AL_UTIL}"
     echo "  ✓ Patched al-util.h for Switch OpenAL paths"
+else
+    echo "  - al-util.h already patched. Skipping."
 fi
+
 
 # Patch eventthread.cpp
 EVENTTHREAD="${ROOT}/src/eventthread.cpp"
 if ! grep -q "SWITCH_OPENAL_PATCH" "${EVENTTHREAD}"; then
+    echo "Applying patch to eventthread.cpp..."
     cp "${EVENTTHREAD}" "${EVENTTHREAD}.bak"
-    sed -i 's|#include <al.h>|#ifdef __SWITCH__\n#include <AL/al.h>\n#else\n#include <al.h>\n#endif|' "${EVENTTHREAD}.bak"
-    sed -i 's|#include <alc.h>|#ifdef __SWITCH__\n#include <AL/alc.h>\n#else\n#include <alc.h>\n#endif|' "${EVENTTHREAD}.bak"
-    sed -i 's|#include <alext.h>|#ifdef __SWITCH__\n#include <AL/alext.h>\n#else\n#include <alext.h>\n#endif|' "${EVENTTHREAD}.bak"
+
+    # Use the defined replacement variables
+    sed -i "s|#include <al.h>|${AL_REPL_SED_SYNTAX}|" "${EVENTTHREAD}.bak"
+    sed -i "s|#include <alc.h>|${ALC_REPL_SED_SYNTAX}|" "${EVENTTHREAD}.bak"
+    sed -i "s|#include <alext.h>|${ALEXT_REPL_SED_SYNTAX}|" "${EVENTTHREAD}.bak"
+    
+    # Note: The original script also had this line injection, we include it here
     sed -i '/#include "switch_compat.h"/a // SWITCH_OPENAL_PATCH' "${EVENTTHREAD}.bak"
-    cp "${EVENTTHREAD}.bak" "${EVENTTHREAD}"
-    rm "${EVENTTHREAD}.bak"
+
+    # Replace the original file and clean up the backup
+    mv "${EVENTTHREAD}.bak" "${EVENTTHREAD}"
     echo "  ✓ Patched eventthread.cpp for Switch OpenAL paths"
+else
+    echo "  - eventthread.cpp already patched. Skipping."
 fi
+
 
 # Patch main.cpp
 MAIN_CPP="${ROOT}/src/main.cpp"
 if ! grep -q "SWITCH_OPENAL_PATCH" "${MAIN_CPP}"; then
+    echo "Applying patch to main.cpp..."
     cp "${MAIN_CPP}" "${MAIN_CPP}.bak"
-    sed -i 's|#include <alc.h>|#ifdef __SWITCH__\n#include <AL/alc.h>\n#else\n#include <alc.h>\n#endif|' "${MAIN_CPP}.bak"
+
+    # Use the defined replacement variable
+    sed -i "s|#include <alc.h>|${ALC_REPL_SED_SYNTAX}|" "${MAIN_CPP}.bak"
+    
+    # Note: The original script also had this line injection, we include it here
     sed -i '/#include "icon.png.xxd"/a // SWITCH_OPENAL_PATCH' "${MAIN_CPP}.bak"
-    cp "${MAIN_CPP}.bak" "${MAIN_CPP}"
-    rm "${MAIN_CPP}.bak"
+
+    # Replace the original file and clean up the backup
+    mv "${MAIN_CPP}.bak" "${MAIN_CPP}"
     echo "  ✓ Patched main.cpp for Switch OpenAL paths"
+else
+    echo "  - main.cpp already patched. Skipping."
 fi
+
 
 # ──────────────────────────────────────────────────────────────
 # Patch uchardet includes for Switch
@@ -761,6 +782,19 @@ else
     echo "⚠️  nacptool or elf2nro not found, skipping .nro generation"
 fi
 
+# ──────────────────────────────────────────────────────────────
+# Timing summary
+# ──────────────────────────────────────────────────────────────
+BUILD_END_TIME=$(date +%s)
+ELAPSED=$((BUILD_END_TIME - BUILD_START_TIME))
+
+ELAPSED_H=$((ELAPSED / 3600))
+ELAPSED_M=$(((ELAPSED % 3600) / 60))
+ELAPSED_S=$((ELAPSED % 60))
+
+echo ""
+echo "════════════════════════════════════════════════════════════"
+printf " ⏱  Total build time: %02d:%02d:%02d\n" "$ELAPSED_H" "$ELAPSED_M" "$ELAPSED_S"
 
 echo ""
 echo "Next steps:"

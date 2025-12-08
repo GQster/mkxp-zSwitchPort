@@ -29,6 +29,7 @@
 #else
 #include <alc.h>
 #endif
+// SWITCH_OPENAL_PATCH
 
 #include <SDL.h>
 #include <SDL_image.h>

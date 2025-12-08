@@ -36,6 +36,19 @@
 #else
 #include <al.h>
 #endif
+// SWITCH_OPENAL_PATCH
+#ifdef __SWITCH__
+#include <AL/alc.h>
+#else
+#include <alc.h>
+#endif
+// SWITCH_OPENAL_PATCH
+#ifdef __SWITCH__
+#include <AL/alext.h>
+#else
+#include <alext.h>
+#endif
+// SWITCH_OPENAL_PATCH
 #include <cmath>
 
 #include "sharedstate.h"

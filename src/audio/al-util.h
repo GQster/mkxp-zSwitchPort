@@ -24,12 +24,17 @@
 #define ALUTIL_H
 
 #ifdef __SWITCH__
-// SWITCH_OPENAL_PATCH
 #include <AL/al.h>
 #else
 #include <al.h>
+#endif
+// SWITCH_OPENAL_PATCH
+#ifdef __SWITCH__
+#include <AL/alext.h>
+#else
 #include <alext.h>
 #endif
+// SWITCH_OPENAL_PATCH
 
 #include <SDL_audio.h>
 #include <assert.h>
@@ -272,12 +277,19 @@ inline ALenum chooseALFormat(int sampleSize, int channelCount)
 		case 1 : return AL_FORMAT_MONO16;
 		case 2 : return AL_FORMAT_STEREO16;
 		}
-    case 4 :
-        switch (channelCount)
-        {
-        case 1 : return AL_FORMAT_MONO_FLOAT32;
-        case 2 : return AL_FORMAT_STEREO_FLOAT32;
-        }
+	case 4 :
+		switch (channelCount)
+		{
+		#if defined(__SWITCH__)
+			// Switch OpenAL does not support float buffers
+			case 1 : return AL_FORMAT_MONO16;
+			case 2 : return AL_FORMAT_STEREO16;
+		#else
+			case 1 : return AL_FORMAT_MONO_FLOAT32;
+			case 2 : return AL_FORMAT_STEREO_FLOAT32;
+		#endif
+		}
+
 	default :
 		assert(!"Unhandled sample size / channel count");
 	}
