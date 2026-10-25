@@ -766,10 +766,15 @@ if command -v nacptool > /dev/null 2>&1 && command -v elf2nro > /dev/null 2>&1; 
     if [ -f "${BUILD}/mkxp-z.nacp" ]; then
         echo "  ✅ Generated: ${BUILD}/mkxp-z.nacp"
         
+        # Stage RomFS: Switch files plus the shared Win32API preload
+        rm -rf "${BUILD}/romfs"
+        cp -r "${ROOT}/switch/romfs-root" "${BUILD}/romfs"
+        cp "${ROOT}/scripts/preload/win32_wrap.rb" "${BUILD}/romfs/preload/"
+
         # Generate .nro with .nacp
         elf2nro "${BUILD}/mkxp-z" "${BUILD}/mkxp-z.nro" \
             --nacp="${BUILD}/mkxp-z.nacp" \
-            --romfsdir="${ROOT}/switch/romfs-root"
+            --romfsdir="${BUILD}/romfs"
         if [ -f "${BUILD}/mkxp-z.nro" ]; then
             echo "  ✅ Generated: ${BUILD}/mkxp-z.nro"
         else

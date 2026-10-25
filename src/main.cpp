@@ -322,6 +322,10 @@ int main(int argc, char *argv[]) {
     conf.dataPathOrg = ".";        // used by prefPath
     conf.dataPathApp = "";         // will be filled from game.title in readGameINI
 
+    // No MiniFFI on Switch: provide Win32API in Ruby (see romfs-root/preload)
+    conf.preloadScripts.push_back("romfs:/preload/win32api_stub.rb");
+    conf.preloadScripts.push_back("romfs:/preload/win32_wrap.rb");
+
     try {
         printf("mkxp-z: calling Config::readGameINI()\n");
         fflush(stdout);
