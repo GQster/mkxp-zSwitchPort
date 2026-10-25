@@ -23,8 +23,17 @@ echo "  • Source:      ${RUBY_SRC}"
 echo "  • Install to:  ${INSTALL_DIR}"
 echo ""
 
-# 2. Clean start
-if [ -d "${RUBY_SRC}" ]; then
+# 2. Clean or incremental start
+# An already configured tree is reused (only the shim and changed sources are
+# rebuilt). Set RUBY_CLEAN=1 to force a fresh extract/configure/patch.
+if [ "${RUBY_CLEAN:-0}" = "1" ] || [ ! -f "${RUBY_SRC}/Makefile" ]; then
+    FRESH=1
+else
+    FRESH=0
+    echo ">>> Incremental build: reusing configured ${RUBY_SRC} (RUBY_CLEAN=1 to start over)"
+fi
+
+if [ "${FRESH}" = "1" ] && [ -d "${RUBY_SRC}" ]; then
     rm -rf "${RUBY_SRC}"
 fi
 rm -rf "${INSTALL_DIR}"
@@ -32,13 +41,15 @@ mkdir -p "${INSTALL_DIR}"
 
 # 3. Download and Extract fresh
 cd ${TOPdir}
-if [ ! -f "${TOPdir}/ruby-${RUBY_VER}.tar.gz" ]; then
-    echo ">>> Downloading Ruby ${RUBY_VER}..."
-    wget https://cache.ruby-lang.org/pub/ruby/3.2/ruby-${RUBY_VER}.tar.gz -O "${TOPdir}/ruby-${RUBY_VER}.tar.gz"
-fi
+if [ "${FRESH}" = "1" ]; then
+    if [ ! -f "${TOPdir}/ruby-${RUBY_VER}.tar.gz" ]; then
+        echo ">>> Downloading Ruby ${RUBY_VER}..."
+        wget https://cache.ruby-lang.org/pub/ruby/3.2/ruby-${RUBY_VER}.tar.gz -O "${TOPdir}/ruby-${RUBY_VER}.tar.gz"
+    fi
 
-echo ">>> Extracting Ruby ${RUBY_VER}..."
-tar -xf "${TOPdir}/ruby-${RUBY_VER}.tar.gz" -C "${TOPdir}"
+    echo ">>> Extracting Ruby ${RUBY_VER}..."
+    tar -xf "${TOPdir}/ruby-${RUBY_VER}.tar.gz" -C "${TOPdir}"
+fi
 cd ${RUBY_SRC}
 
 # 4. Toolchain
@@ -148,7 +159,16 @@ FILE *popen(const char *command, const char *type) { return NULL; }
 int pclose(FILE *stream) { return -1; }
 
 int chown(const char *pathname, uid_t owner, gid_t group) { return 0; }
-long sysconf(int name) { return -1; }
+
+#include <errno.h>
+// Ruby sizes fiber stacks from _SC_PAGESIZE in Init_Cont; returning -1 there
+// overflows the fiber pool size, raises FiberError, and ruby_init() exits.
+long sysconf(int name) {
+    switch (name) {
+      case _SC_PAGESIZE: return 0x1000; /* Horizon uses 4 KiB pages */
+      default: errno = EINVAL; return -1;
+    }
+}
 pid_t getppid(void) { return 0; }
 
 #include <sys/resource.h>
@@ -319,6 +339,10 @@ export CFLAGS=""
 export CXXFLAGS=""
 export LDFLAGS="-L${DEVKITPRO}/libnx/lib -L${DEVKITPRO}/portlibs/switch/lib"
 export LIBS=""
+
+# Configure and source patches only run on a fresh tree: the sed '1i' patches
+# below are not idempotent.
+if [ "${FRESH}" = "1" ]; then
 
 # Remove test extensions to prevent shared object build failures
 rm -rf ext/-test-
@@ -495,6 +519,8 @@ PYTHON_EOF
 
 
 echo "    ✓ All patches applied"
+
+fi # FRESH
 
 # 7. Build - only build the static library, skip extensions
 echo ""
