@@ -1192,7 +1192,9 @@ struct InputPrivate
 
 Input::Input(const RGSSThreadData &rtData)
 {
+    printf("Input::Input: enter\n"); fflush(stdout);
     p = new InputPrivate(rtData);
+    printf("Input::Input: exit\n"); fflush(stdout);
 }
 
 double Input::getDelta() {

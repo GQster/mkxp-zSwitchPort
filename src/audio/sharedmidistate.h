@@ -50,7 +50,11 @@ struct SharedMidiState
 	SharedMidiState(const Config &conf)
 	    : inited(false),
 	      soundFont(conf.midi.soundFont)
-	{}
+	{
+	    printf("SharedMidiState::ctor: soundFont='%s'\n",
+	           soundFont.c_str());
+	    fflush(stdout);
+	}
 
 	~SharedMidiState()
 	{

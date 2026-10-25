@@ -305,6 +305,8 @@ EX:
 
   CMD:
    aarch64-none-elf-addr2line -f -C -e build-switch/mkxp-z 0x114da0 0x114c38 0xac
+
+   aarch64-none-elf-addr2line -f -C -e build-switch/mkxp-z
 ```
 
 

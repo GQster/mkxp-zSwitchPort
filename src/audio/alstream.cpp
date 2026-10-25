@@ -44,18 +44,23 @@ ALStream::ALStream(LoopMode loopMode,
 	  preemptPause(false),
       pitch(1.0f)
 {
+	printf("ALStream::ctor: enter (threadId=%s)\n", threadId.c_str()); fflush(stdout);
 	alSrc = AL::Source::gen();
+	printf("ALStream::ctor: after Source::gen\n"); fflush(stdout);
 
 	AL::Source::setVolume(alSrc, 1.0f);
 	AL::Source::setPitch(alSrc, 1.0f);
 	AL::Source::detachBuffer(alSrc);
+	printf("ALStream::ctor: after Source setup\n"); fflush(stdout);
 
 	for (int i = 0; i < STREAM_BUFS; ++i)
 		alBuf[i] = AL::Buffer::gen();
+	printf("ALStream::ctor: after Buffer::gen\n"); fflush(stdout);
 
 	pauseMut = SDL_CreateMutex();
 
 	threadName = std::string("al_stream (") + threadId + ")";
+	printf("ALStream::ctor: exit\n"); fflush(stdout);
 }
 
 ALStream::~ALStream()

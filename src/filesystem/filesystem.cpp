@@ -282,6 +282,9 @@ struct FileSystemPrivate {
 
 static void throwPhysfsError(const char *desc) {
   PHYSFS_ErrorCode ec = PHYSFS_getLastErrorCode();
+  printf("throwPhysfsError: desc='%s', ec=%d\n", desc, (int)ec);
+  fflush(stdout);
+
   const char *englishStr;
     if (ec == 0) {
         // Sometimes on Windows PHYSFS_init can return null
@@ -290,6 +293,9 @@ static void throwPhysfsError(const char *desc) {
     } else {
         englishStr = PHYSFS_getErrorByCode(ec);
     }
+
+  printf("throwPhysfsError: message='%s'\n", englishStr);
+  fflush(stdout);
 
   throw Exception(Exception::PHYSFSError, "%s: %s", desc, englishStr);
 }
@@ -333,6 +339,9 @@ FileSystem::FileSystem(const char *argv0, bool allowSymlinks) {
 
   if (allowSymlinks)
     PHYSFS_permitSymbolicLinks(1);
+
+  printf("FileSystem::FileSystem: exit\n");
+  fflush(stdout);
 }
 
 FileSystem::~FileSystem() {

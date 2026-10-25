@@ -1186,6 +1186,7 @@ static void showExc(VALUE exc, const BacktraceData &btData) {
 }
 
 static void mriBindingExecute() {
+    printf("mriBindingExecute: enter\n"); fflush(stdout);
     Config &conf = shState->rtData().config;
     
 #if RAPI_MAJOR >= 2
@@ -1199,12 +1200,19 @@ static void mriBindingExecute() {
 #else
 #endif
     
+    printf("mriBindingExecute: before RUBY_INIT_STACK\n"); fflush(stdout);
     RUBY_INIT_STACK;
+    printf("mriBindingExecute: after RUBY_INIT_STACK\n"); fflush(stdout);
+
+    printf("mriBindingExecute: before ruby_init\n"); fflush(stdout);
     ruby_init();
+    printf("mriBindingExecute: after ruby_init\n"); fflush(stdout);
     
+    printf("mriBindingExecute: setting up rubyArgsC\n"); fflush(stdout);
     std::vector<const char*> rubyArgsC{"mkxp-z"};
     rubyArgsC.push_back("-e ");
     void *node;
+    printf("mriBindingExecute: jit.enabled=%d, yjit.enabled=%d\n", conf.jit.enabled, conf.yjit.enabled); fflush(stdout);
     if (conf.jit.enabled) {
 #if RAPI_FULL >= 310
         // Ruby v3.1.0 renamed the --jit options to --mjit.

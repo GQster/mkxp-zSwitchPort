@@ -75,14 +75,18 @@ struct AudioPrivate
 	      syncPoint(rtData.syncPoint),
           volumeRatio(1)
 	{
+        printf("AudioPrivate::ctor: enter\n"); fflush(stdout);
         for (int i = 0; i < rtData.config.BGM.trackCount; i++) {
             std::string id = std::string("bgm" + std::to_string(i));
             bgmTracks.push_back(new AudioStream(ALStream::Looped, id.c_str()));
         }
+        printf("AudioPrivate::ctor: after bgmTracks\n"); fflush(stdout);
         
 		meWatch.state = MeNotPlaying;
+        printf("AudioPrivate::ctor: before createSDLThread\n"); fflush(stdout);
 		meWatch.thread = createSDLThread
 			<AudioPrivate, &AudioPrivate::meWatchFun>(this, "audio_mewatch");
+        printf("AudioPrivate::ctor: exit\n"); fflush(stdout);
 	}
 
 	~AudioPrivate()
@@ -286,7 +290,9 @@ struct AudioPrivate
 
 Audio::Audio(RGSSThreadData &rtData)
 	: p(new AudioPrivate(rtData))
-{}
+{
+    printf("Audio::Audio: ctor complete\n"); fflush(stdout);
+}
 
 
 void Audio::bgmPlay(const char *filename,

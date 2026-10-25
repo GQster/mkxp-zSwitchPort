@@ -881,9 +881,12 @@ struct GraphicsPrivate {
         screenQuad.setTexPosRect(screenRect, screenRect);
         
         fpsLimiter.resetFrameAdjust();
+
+        printf("GraphicsPrivate::ctor: end\n"); fflush(stdout);
     }
     
     ~GraphicsPrivate() {
+        printf("GraphicsPrivate::dtor: begin\n"); fflush(stdout);
         TEXFBO::fini(frozenScene);
         TEXFBO::fini(integerScaleBuffer);
         SDL_DestroyMutex(avgFPSLock);
