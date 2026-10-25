@@ -361,6 +361,7 @@ echo ">>> Configuring Ruby..."
     --disable-shared \
     --enable-static \
     --with-compress-debug-sections=none \
+    --with-coroutine=arm64 \
     --with-out-ext=openssl,readline,dbm,gdbm,pty,syslog,fiddle,bigdecimal,-test- \
     ac_cv_func_fork=no \
     ac_cv_func_mmap=no \
