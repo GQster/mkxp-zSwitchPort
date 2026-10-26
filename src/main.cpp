@@ -329,6 +329,8 @@ int main(int argc, char *argv[]) {
         "romfs:/preload/win32api_stub.rb",
         "romfs:/preload/win32_wrap.rb",
         "romfs:/preload/socket_stub.rb",
+        // Shows "Loading <title>..." while the game's scripts load
+        "romfs:/preload/loading_screen.rb",
     });
 #endif
 
