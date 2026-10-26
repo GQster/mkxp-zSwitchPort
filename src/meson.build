@@ -62,6 +62,15 @@ if host_system == 'switch'
         include_directories: include_directories('../libs/SDL_sound-switch/include'),
         link_args: [join_paths(meson.project_source_root(), 'libs/SDL_sound-switch/lib/libSDL2_sound.a')]
     )
+
+    # FluidSynth for MIDI (our custom static build, see configure_mkxpz.sh).
+    # SHARED_FLUID makes fluid-fun.cpp call it directly instead of dlopen()ing
+    # libfluidsynth, which cannot work on Switch.
+    fluidsynth = declare_dependency(
+        include_directories: include_directories('../libs/fluidsynth-switch/include'),
+        link_args: [join_paths(meson.project_source_root(), 'libs/fluidsynth-switch/lib/libfluidsynth.a')]
+    )
+    add_project_arguments('-DSHARED_FLUID', language: 'cpp')
     
     # SDL2_ttf
     sdl2_ttf = declare_dependency(
@@ -135,7 +144,7 @@ if host_system == 'switch'
     )
     global_dependencies += ruby
     global_dependencies += [
-        physfs, openal, theora, vorbisfile, vorbis, ogg, sdl2, sdl_sound,
+        physfs, openal, theora, vorbisfile, vorbis, ogg, sdl2, sdl_sound, fluidsynth,
         sdl2_ttf, freetype, pixman, png, zlib, uchardet, sdl2_image, bz2, iconv
     ]
 

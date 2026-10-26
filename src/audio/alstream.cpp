@@ -216,6 +216,7 @@ struct ALStreamOpenHandler : FileSystem::OpenHandler
 		{
 			if (!strcmp(sig, "OggS"))
 			{
+				SWITCH_TRACE("ALStream: Vorbis source (.%s)\n", ext ? ext : "");
 				source = createVorbisSource(ops, looped);
 				return true;
 			}
@@ -226,6 +227,7 @@ struct ALStreamOpenHandler : FileSystem::OpenHandler
 
 				if (HAVE_FLUID)
 				{
+					SWITCH_TRACE("ALStream: MIDI source via FluidSynth (.%s)\n", ext ? ext : "");
 					source = createMidiSource(ops, looped);
 					return true;
 				}

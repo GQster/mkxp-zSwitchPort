@@ -46,6 +46,7 @@ REQUIRED_LIBS=(
     "${LIBS}/ruby-switch/lib/libruby-static.a"
     "${LIBS}/physfs-switch/lib/libphysfs.a"
     "${LIBS}/SDL_sound-switch/lib/libSDL2_sound.a"
+    "${LIBS}/fluidsynth-switch/lib/libfluidsynth.a"
 )
 
 for lib in "${REQUIRED_LIBS[@]}"; do
@@ -81,7 +82,6 @@ meson setup "${BUILD}" "${ROOT}" \
     --cross-file "${CROSS_FILE}" \
     -Ddefault_library=static \
     -Dbuildtype=release \
-    -Dshared_fluid=false \
     -Duse_miniffi=false
 
 if [ $? -ne 0 ]; then

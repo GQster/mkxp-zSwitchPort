@@ -62,7 +62,7 @@ switch/buildScripts/docker_build.sh shell   # interactive shell in /workspace
 
 | Step | Script | Output |
 |------|--------|--------|
-| `deps` | `configure_mkxpz.sh` | `libs/physfs-switch`, `libs/SDL_sound-switch` |
+| `deps` | `configure_mkxpz.sh` | `libs/physfs-switch`, `libs/SDL_sound-switch`, `libs/fluidsynth-switch` |
 | `ruby` | `build_ruby_switch.sh` | `libs/ruby-switch` (Ruby 3.2.2, static) |
 | `mkxpz` | `build_mkxpz_switch.sh` | `build-switch/mkxp-z.nro` |
 

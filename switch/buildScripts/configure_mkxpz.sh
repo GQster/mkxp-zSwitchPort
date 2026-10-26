@@ -284,7 +284,60 @@ make -C "${TOPDIR}/SDL_sound-build" -j${PARALLEL_JOBS}
 
 make -C "${TOPDIR}/SDL_sound-build" install
 
+# ────────────────────────────────────────────────────────────
+# 3. Build FluidSynth (MIDI playback, linked statically into mkxp-z)
+# ────────────────────────────────────────────────────────────
+# FluidSynth >= 2.4 can use C++11 threads instead of glib (osal=cpp11).
+# Only the library is built; mkxp-z renders the synth itself, so every
+# audio/MIDI driver and optional dependency is off.
+echo ">>> Building FluidSynth for Switch..."
+FLUIDSYNTH_VERSION=v2.5.7
+FLUID_SRC="${LIBS_DIR}/fluidsynth-src"
+FLUID_BUILD="${LIBS_DIR}/fluidsynth-build"
+FLUID_PREFIX="${LIBS_DIR}/fluidsynth-switch"
+if [ ! -d "${FLUID_SRC}" ]; then
+    git clone --depth 1 --branch "${FLUIDSYNTH_VERSION}" https://github.com/FluidSynth/fluidsynth.git "${FLUID_SRC}"
+fi
+
+FLUID_OFF=""
+for opt in alsa aufile dbus ipv6 jack ladspa libinstpatch libsndfile midishare network \
+           oss dsound wasapi waveout winmidi sdl3 pulseaudio pipewire readline openmp \
+           unicode systemd portaudio native-dls; do
+    FLUID_OFF="${FLUID_OFF} -Denable-${opt}=OFF"
+done
+
+# fluidsynth_switch_compat.h stubs pthread_setschedparam (missing in newlib)
+cmake -S "${FLUID_SRC}" -B "${FLUID_BUILD}" \
+    -DCMAKE_SYSTEM_NAME=Generic \
+    -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+    -DCMAKE_C_COMPILER=${DEVKITARM}/bin/aarch64-none-elf-gcc \
+    -DCMAKE_CXX_COMPILER=${DEVKITARM}/bin/aarch64-none-elf-g++ \
+    -DCMAKE_AR=${DEVKITARM}/bin/aarch64-none-elf-gcc-ar \
+    -DCMAKE_RANLIB=${DEVKITARM}/bin/aarch64-none-elf-gcc-ranlib \
+    -DCMAKE_FIND_ROOT_PATH=${DEVKITPRO}/portlibs/switch \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
+    -Dosal=cpp11 \
+    -Denable-threads=ON \
+    ${FLUID_OFF} \
+    -DCMAKE_INSTALL_PREFIX="${FLUID_PREFIX}" \
+    -DCMAKE_C_FLAGS="${CFLAGS} -include ${TOPDIR}/switch/deps/fluidsynth_switch_compat.h" \
+    -DCMAKE_CXX_FLAGS="${CXXFLAGS}"
+
+make -C "${FLUID_BUILD}" -j"$(nproc)" libfluidsynth
+
+# Install the library, headers and pkg-config file (make install would also
+# link the fluidsynth command-line player, which is not needed)
+rm -rf "${FLUID_PREFIX}"
+mkdir -p "${FLUID_PREFIX}/lib/pkgconfig" "${FLUID_PREFIX}/include/fluidsynth"
+cp "${FLUID_BUILD}/src/libfluidsynth.a" "${FLUID_PREFIX}/lib/"
+cp "${FLUID_BUILD}/fluidsynth.pc" "${FLUID_PREFIX}/lib/pkgconfig/"
+cp "${FLUID_BUILD}/include/fluidsynth.h" "${FLUID_PREFIX}/include/"
+cp "${FLUID_SRC}"/include/fluidsynth/*.h "${FLUID_BUILD}/include/fluidsynth/version.h" \
+   "${FLUID_PREFIX}/include/fluidsynth/"
+
 echo
 echo "✅ Dependency build complete!"
-echo "→ PhysicsFS: ${LIBS_DIR}/physfs-switch/lib/libphysfs.a"
-echo "→ SDL_sound: ${LIBS_DIR}/SDL_sound-switch/lib/libSDL2_sound.a"
+echo "→ PhysicsFS:  ${LIBS_DIR}/physfs-switch/lib/libphysfs.a"
+echo "→ SDL_sound:  ${LIBS_DIR}/SDL_sound-switch/lib/libSDL2_sound.a"
+echo "→ FluidSynth: ${FLUID_PREFIX}/lib/libfluidsynth.a"
