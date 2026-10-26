@@ -374,6 +374,7 @@ echo ">>> Configuring Ruby..."
     --with-compress-debug-sections=none \
     --with-coroutine=arm64 \
     --with-static-linked-ext \
+    --disable-close-fds-by-recvmsg-with-peek \
     --with-out-ext=openssl,readline,dbm,gdbm,pty,syslog,fiddle,bigdecimal,-test- \
     ac_cv_func_fork=no \
     ac_cv_func_mmap=no \
@@ -567,6 +568,63 @@ patch('    else if (th == th->vm->ractor.main_thread) { /* always able to handle
 with open('thread_pthread.c', 'w') as f:
     f.write(content)
 print("    ✓ get_stack() implemented for libnx")
+PYTHON_EOF
+
+# The BSD socket API is in libnx, and mkmf's link tests only link against it
+# with devkitPro's specs, so the socket extension used to be skipped
+# ("undefined reference to socket"). Only its own checks get the flags.
+echo "    → Patching ext/socket/extconf.rb (link tests against libnx)"
+python3 << 'PYTHON_EOF'
+path = 'ext/socket/extconf.rb'
+with open(path) as f:
+    content = f.read()
+old = "require 'mkmf'\n"
+assert content.count(old) == 1
+content = content.replace(old, old +
+    "# Switch: socket functions live in libnx (build_ruby_switch.sh)\n"
+    "$LDFLAGS << ' -specs=/opt/devkitpro/libnx/switch.specs'\n"
+    "$LIBS << ' -lnx'\n", 1)
+with open(path, 'w') as f:
+    f.write(content)
+print("    ✓ socket extconf links tests against libnx")
+
+def patch(path, old, new):
+    with open(path) as f:
+        content = f.read()
+    assert content.count(old) == 1, (path, old)
+    with open(path, 'w') as f:
+        f.write(content.replace(old, new))
+
+# libnx's netdb.h declares h_errno thread-local; don't redeclare it
+patch('ext/socket/sockport.h',
+      '#if defined(HOST_NOT_FOUND) && !defined(h_errno) && !defined(__CYGWIN__)\n',
+      '#if defined(HOST_NOT_FOUND) && !defined(h_errno) && !defined(__CYGWIN__) && !defined(__SWITCH__)\n')
+# inspect_ipv6_mreq() only exists with struct ipv6_mreq, which libnx lacks
+for opt in ('IPV6_JOIN_GROUP', 'IPV6_LEAVE_GROUP'):
+    patch('ext/socket/option.c',
+          '#            if defined(%s) /* POSIX */\n' % opt,
+          '#            if defined(%s) && defined(HAVE_TYPE_STRUCT_IPV6_MREQ) /* POSIX */\n' % opt)
+# BasicSocket#recv used recvfrom() with an address buffer even though it
+# drops the address; Ryujinx rejects that on TCP sockets (EOPNOTSUPP), which
+# broke e.g. Essentials' Cable Club. Use recv() when no address is wanted.
+patch('ext/socket/init.c',
+      '    ret = recvfrom(arg->fd, RSTRING_PTR(arg->str), arg->length,\n'
+      '                   arg->flags, &arg->buf.addr, &arg->alen);\n',
+      '    if (arg->alen == 0) /* __SWITCH__: plain recv, no address wanted */\n'
+      '        ret = recv(arg->fd, RSTRING_PTR(arg->str), arg->length, arg->flags);\n'
+      '    else\n'
+      '    ret = recvfrom(arg->fd, RSTRING_PTR(arg->str), arg->length,\n'
+      '                   arg->flags, &arg->buf.addr, &arg->alen);\n')
+patch('ext/socket/init.c',
+      '    arg.fd = fptr->fd;\n    arg.alen = (socklen_t)sizeof(arg.buf);\n',
+      '    arg.fd = fptr->fd;\n    arg.alen = from == RECV_RECV ? 0 : (socklen_t)sizeof(arg.buf);\n')
+patch('ext/socket/init.c',
+      '    slen = recvfrom(fd, RSTRING_PTR(str), buflen, flags, &buf.addr, &alen);\n',
+      '    if (from == RECV_RECV) /* __SWITCH__: plain recv, no address wanted */\n'
+      '        slen = recv(fd, RSTRING_PTR(str), buflen, flags);\n'
+      '    else\n'
+      '    slen = recvfrom(fd, RSTRING_PTR(str), buflen, flags, &buf.addr, &alen);\n')
+print("    ✓ socket sources patched for libnx")
 PYTHON_EOF
 
 

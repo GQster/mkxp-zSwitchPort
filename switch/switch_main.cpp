@@ -46,6 +46,8 @@ void setup_file_logging() {
     }
 }
 
+static bool socketsReady = false;
+
 extern "C" {
 
 // This hook is called by libnx before main()
@@ -57,14 +59,15 @@ void userAppInit(void) {
     //    switch_enable_logging(), after the game picker: the picker draws
     //    on the libnx console, which needs stdout.
 
-    // 3. Network Sockets - DISABLED to prevent crash
-    // socketInitializeDefault(); 
-    // nxlinkStdio();
+    // 3. BSD sockets for Ruby's socket extension (e.g. Essentials' Cable
+    //    Club). Not fatal: without it, connections just fail with errors.
+    socketsReady = R_SUCCEEDED(socketInitializeDefault());
 }
 
 // This hook is called after main() returns
 void userAppExit(void) {
-    // socketExit(); // Disabled
+    if (socketsReady)
+        socketExit();
     romfsExit();
 }
 

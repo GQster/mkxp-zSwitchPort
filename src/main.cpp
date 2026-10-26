@@ -323,12 +323,11 @@ int main(int argc, char *argv[]) {
     }
 
 #ifdef __SWITCH__
-    // No MiniFFI or socket extension on Switch: Ruby stand-ins from RomFS
-    // (switch/romfs-root/preload) run before the game's own preload scripts.
+    // No MiniFFI on Switch: Ruby stand-ins from RomFS (switch/romfs-root/
+    // preload) run before the game's own preload scripts.
     conf.preloadScripts.insert(conf.preloadScripts.begin(), {
         "romfs:/preload/win32api_stub.rb",
         "romfs:/preload/win32_wrap.rb",
-        "romfs:/preload/socket_stub.rb",
         // Shows "Loading <title>..." while the game's scripts load
         "romfs:/preload/loading_screen.rb",
     });
