@@ -14,8 +14,11 @@
 #include <string>
 #include <vector>
 
-// Startup game picker. Runs on the libnx text console before SDL takes the
-// display. Games live in GAMES_ROOT/<folder>/ with a Game.ini each; a
+#include "switch_pickerui.h"
+
+// Startup game picker, run before SDL takes the display: the home-screen
+// style UI (switch_pickerui.cpp), or the libnx text console if that cannot
+// start. Games live in GAMES_ROOT/<folder>/ with a Game.ini each; a
 // Game.ini directly in GAMES_ROOT is launched as the only game.
 
 #define MKXPZ_ROOT "sdmc:/switch/mkxp-z"
@@ -161,6 +164,28 @@ extern "C" bool switch_pick_game(char *out, size_t outSize) {
 
     menuShown = true;
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
+
+    int sel = 0;
+    std::string last = readLastGame();
+    for (size_t i = 0; i < games.size(); ++i)
+        if (games[i].folder == last)
+            sel = (int)i;
+
+    if (!games.empty()) {
+        std::vector<PickerGame> uiGames;
+        for (const GameEntry &g : games)
+            uiGames.push_back({GAMES_ROOT "/" + g.folder, g.folder});
+        PickerResult r = pickerUiRun(uiGames, sel);
+        if (r == PICKER_QUIT)
+            return false;
+        if (r == PICKER_PICKED) {
+            writeLastGame(games[sel].folder);
+            snprintf(out, outSize, GAMES_ROOT "/%s", games[sel].folder.c_str());
+            return true;
+        }
+    }
+
+    // Fallback: text console
     PadState pad;
     padInitializeDefault(&pad);
     consoleInit(NULL);
@@ -172,11 +197,6 @@ extern "C" bool switch_pick_game(char *out, size_t outSize) {
         return false;
     }
 
-    int sel = 0;
-    std::string last = readLastGame();
-    for (size_t i = 0; i < games.size(); ++i)
-        if (games[i].folder == last)
-            sel = (int)i;
     int top = std::max(0, sel - LIST_ROWS + 1);
 
     bool picked = false;
