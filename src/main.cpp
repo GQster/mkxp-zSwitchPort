@@ -448,9 +448,20 @@ int main(int argc, char *argv[]) {
 
     SWITCH_TRACE("mkxp-z: before SDL_CreateWindow\n");
     
+    int createW = conf.defScreenW, createH = conf.defScreenH;
+#ifdef __SWITCH__
+    // The window is always the whole screen on Switch. Created at the game's
+    // resolution, the display would stretch it to fill the screen; created at
+    // the display's size, mkxp-z scales the game itself and keeps its aspect
+    // ratio (fixedAspectRatio).
+    SDL_DisplayMode desktop;
+    if (SDL_GetDesktopDisplayMode(0, &desktop) == 0) {
+        createW = desktop.w;
+        createH = desktop.h;
+    }
+#endif
     win = SDL_CreateWindow(conf.windowTitle.c_str(), SDL_WINDOWPOS_UNDEFINED,
-                           SDL_WINDOWPOS_UNDEFINED, conf.defScreenW,
-                           conf.defScreenH, winFlags);
+                           SDL_WINDOWPOS_UNDEFINED, createW, createH, winFlags);
 
     if (!win) {
       showInitError(std::string("Error creating window: ") + SDL_GetError());
