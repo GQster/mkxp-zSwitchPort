@@ -1,4 +1,5 @@
 #include <cassert>
+#include "switch-trace.h"
 /*
 ** sharedstate.cpp
 **
@@ -129,93 +130,88 @@ struct SharedStatePrivate
           stampCounter(0),
           startupTime()
 	 {
-        printf("SharedStatePrivate::ctor: begin\n"); fflush(stdout);
-        printf("  threadData=%p, window=%p\n",
+        SWITCH_TRACE("SharedStatePrivate::ctor: begin\n");
+        SWITCH_TRACE("  threadData=%p, window=%p\n",
                (void*)threadData, (void*)threadData->window);
-        fflush(stdout);
-        printf("SharedStatePrivate::ctor: end\n"); fflush(stdout);
+        SWITCH_TRACE("SharedStatePrivate::ctor: end\n");
     }
 
 	void init(RGSSThreadData *threadData)
 	{
-        printf("SharedStatePrivate::init: enter\n"); fflush(stdout);
+        SWITCH_TRACE("SharedStatePrivate::init: enter\n");
 
         startupTime = std::chrono::steady_clock::now();
 
 		/* Shaders have been compiled in ShaderSet's constructor */
 		if (gl.ReleaseShaderCompiler)
 			gl.ReleaseShaderCompiler();
-        printf("SharedStatePrivate::init: after ReleaseShaderCompiler\n"); fflush(stdout);
+        SWITCH_TRACE("SharedStatePrivate::init: after ReleaseShaderCompiler\n");
 
 		std::string archPath = config.execName + gameArchExt();
-        printf("SharedStatePrivate::init: archPath='%s'\n", archPath.c_str()); fflush(stdout);
+        SWITCH_TRACE("SharedStatePrivate::init: archPath='%s'\n", archPath.c_str());
 
 		for (size_t i = 0; i < config.patches.size(); ++i) {
-            printf("SharedStatePrivate::init: addPath(patch[%zu])='%s'\n",
+            SWITCH_TRACE("SharedStatePrivate::init: addPath(patch[%zu])='%s'\n",
                    i, config.patches[i].c_str());
-            fflush(stdout);
 			fileSystem.addPath(config.patches[i].c_str());
         }
 
 		/* Check if a game archive exists */
 		FILE *tmp = fopen(archPath.c_str(), "rb");
-        printf("SharedStatePrivate::init: fopen('%s') -> %p\n",
+        SWITCH_TRACE("SharedStatePrivate::init: fopen('%s') -> %p\n",
                archPath.c_str(), (void*)tmp);
-        fflush(stdout);
 		if (tmp)
 		{
 			fileSystem.addPath(archPath.c_str());
 			fclose(tmp);
 		}
 
-        printf("SharedStatePrivate::init: addPath('.')\n"); fflush(stdout);
+        SWITCH_TRACE("SharedStatePrivate::init: addPath('.')\n");
 		fileSystem.addPath(".");
 
 		for (size_t i = 0; i < config.rtps.size(); ++i) {
-            printf("SharedStatePrivate::init: addPath(rtp[%zu])='%s'\n",
+            SWITCH_TRACE("SharedStatePrivate::init: addPath(rtp[%zu])='%s'\n",
                    i, config.rtps[i].c_str());
-            fflush(stdout);
 			fileSystem.addPath(config.rtps[i].c_str());
         }
 
-        printf("SharedStatePrivate::init: before pathCache check (pathCache=%d)\n",
+        SWITCH_TRACE("SharedStatePrivate::init: before pathCache check (pathCache=%d)\n",
                (int)config.pathCache);
-        fflush(stdout);
 
 		if (config.pathCache) {
-            printf("SharedStatePrivate::init: before createPathCache\n"); fflush(stdout);
+            SWITCH_TRACE("SharedStatePrivate::init: before createPathCache\n");
 			fileSystem.createPathCache();
-            printf("SharedStatePrivate::init: after createPathCache\n"); fflush(stdout);
+            SWITCH_TRACE("SharedStatePrivate::init: after createPathCache\n");
         }
 
-        printf("SharedStatePrivate::init: before initFontSets\n"); fflush(stdout);
+        SWITCH_TRACE("SharedStatePrivate::init: before initFontSets\n");
 		fileSystem.initFontSets(fontState);
-        printf("SharedStatePrivate::init: after initFontSets\n"); fflush(stdout);
+        SWITCH_TRACE("SharedStatePrivate::init: after initFontSets\n");
 
 		globalTexW = 128;
 		globalTexH = 64;
 
-        printf("SharedStatePrivate::init: before TEX::gen\n"); fflush(stdout);
+        SWITCH_TRACE("SharedStatePrivate::init: before TEX::gen\n");
 		globalTex = TEX::gen();
 		TEX::bind(globalTex);
 		TEX::setRepeat(false);
 		TEX::setSmooth(false);
 		TEX::allocEmpty(globalTexW, globalTexH);
 		globalTexDirty = false;
-        printf("SharedStatePrivate::init: after TEX setup\n"); fflush(stdout);
+        SWITCH_TRACE("SharedStatePrivate::init: after TEX setup\n");
 
 		TEXFBO::init(gpTexFBO);
 		/* Reuse starting values */
 		TEXFBO::allocEmpty(gpTexFBO, globalTexW, globalTexH);
 		TEXFBO::linkFBO(gpTexFBO);
-        printf("SharedStatePrivate::init: after gpTexFBO setup\n"); fflush(stdout);
+        SWITCH_TRACE("SharedStatePrivate::init: after gpTexFBO setup\n");
 
 		/* RGSS3 games will call setup_midi, so there's
 		 * no need to do it on startup */
 		if (rgssVer <= 2) {
-            printf("SharedStatePrivate::init: before midiState.initIfNeeded\n"); fflush(stdout);
+            SWITCH_TRACE("SharedStatePrivate::init: before midiState.initIfNeeded\n");
 			midiState.initIfNeeded(threadData->config);
-			printf("SharedStatePrivate::init: after midiState.initIfNeeded\n"); fflush(stdout);
+			SWITCH_TRACE("SharedStatePrivate::init: after midiState.initIfNeeded\n");
         }
 	}
 
@@ -229,9 +225,8 @@ struct SharedStatePrivate
 
 void SharedState::initInstance(RGSSThreadData *threadData)
 {
-    printf("SharedState::initInstance: entered (rgssVersion=%d)\n",
+    SWITCH_TRACE("SharedState::initInstance: entered (rgssVersion=%d)\n",
            threadData->config.rgssVersion);
-    fflush(stdout);
 
 	/* This section is tricky because of dependencies:
 	 * SharedState depends on GlobalIBO existing,
@@ -247,23 +242,19 @@ void SharedState::initInstance(RGSSThreadData *threadData)
 
 	try
 	{
-        printf("SharedState::initInstance: before new SharedState\n");
-        fflush(stdout);
+        SWITCH_TRACE("SharedState::initInstance: before new SharedState\n");
 
 		SharedState::instance = new SharedState(threadData);
 
-        printf("SharedState::initInstance: after new SharedState\n");
-        fflush(stdout);
+        SWITCH_TRACE("SharedState::initInstance: after new SharedState\n");
 
 		Font::initDefaults(instance->p->fontState);
 
-        printf("SharedState::initInstance: after Font::initDefaults\n");
-        fflush(stdout);
+        SWITCH_TRACE("SharedState::initInstance: after Font::initDefaults\n");
 
 		defaultFont = new Font();
 
-        printf("SharedState::initInstance: after new Font\n");
-        fflush(stdout);
+        SWITCH_TRACE("SharedState::initInstance: after new Font\n");
 	}
 	catch (const Exception &exc)
 	{
@@ -278,8 +269,7 @@ void SharedState::initInstance(RGSSThreadData *threadData)
 	}
 
     SharedState::instance->p->defaultFont = defaultFont;
-    printf("SharedState::initInstance: completed\n");
-    fflush(stdout);
+    SWITCH_TRACE("SharedState::initInstance: completed\n");
 }
 
 void SharedState::finiInstance()
@@ -454,21 +444,21 @@ unsigned int SharedState::genTimeStamp()
 
 SharedState::SharedState(RGSSThreadData *threadData)
 {
-    printf("SharedState::SharedState: ctor begin\n"); fflush(stdout);
+    SWITCH_TRACE("SharedState::SharedState: ctor begin\n");
 
 	p = new SharedStatePrivate(threadData);
-    printf("SharedState::SharedState: after new SharedStatePrivate\n"); fflush(stdout);
+    SWITCH_TRACE("SharedState::SharedState: after new SharedStatePrivate\n");
 
 	SharedState::instance = this;
 	try
 	{
-        printf("SharedState::SharedState: before p->init\n"); fflush(stdout);
+        SWITCH_TRACE("SharedState::SharedState: before p->init\n");
 		p->init(threadData);
-        printf("SharedState::SharedState: after p->init\n"); fflush(stdout);
+        SWITCH_TRACE("SharedState::SharedState: after p->init\n");
 
-        printf("SharedState::SharedState: before graphics.getScreen\n"); fflush(stdout);
+        SWITCH_TRACE("SharedState::SharedState: before graphics.getScreen\n");
 		p->screen = p->graphics.getScreen();
-        printf("SharedState::SharedState: after graphics.getScreen\n"); fflush(stdout);
+        SWITCH_TRACE("SharedState::SharedState: after graphics.getScreen\n");
 	}
 	catch (const Exception &exc)
 	{

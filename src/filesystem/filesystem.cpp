@@ -20,6 +20,7 @@
 */
 
 #include "filesystem.h"
+#include "switch-trace.h"
 
 #include "util/boost-hash.h"
 #include "util/debugwriter.h"
@@ -325,8 +326,7 @@ FileSystem::FileSystem(const char *argv0, bool allowSymlinks) {
   er *= PHYSFS_registerArchiver(&RGSS2_Archiver);
   er *= PHYSFS_registerArchiver(&RGSS3_Archiver);
 
-  printf("FileSystem::FileSystem: after registerArchiver, er=%d\n", er);
-  fflush(stdout);
+  SWITCH_TRACE("FileSystem::FileSystem: after registerArchiver, er=%d\n", er);
 
   if (er == 0) {
     printf("FileSystem::FileSystem: registerArchiver FAILED\n");
@@ -340,8 +340,7 @@ FileSystem::FileSystem(const char *argv0, bool allowSymlinks) {
   if (allowSymlinks)
     PHYSFS_permitSymbolicLinks(1);
 
-  printf("FileSystem::FileSystem: exit\n");
-  fflush(stdout);
+  SWITCH_TRACE("FileSystem::FileSystem: exit\n");
 }
 
 FileSystem::~FileSystem() {

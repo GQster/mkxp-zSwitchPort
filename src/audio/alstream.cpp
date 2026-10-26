@@ -20,6 +20,7 @@
 */
 
 #include "alstream.h"
+#include "switch-trace.h"
 
 #include "sharedstate.h"
 #include "sharedmidistate.h"
@@ -44,23 +45,23 @@ ALStream::ALStream(LoopMode loopMode,
 	  preemptPause(false),
       pitch(1.0f)
 {
-	printf("ALStream::ctor: enter (threadId=%s)\n", threadId.c_str()); fflush(stdout);
+	SWITCH_TRACE("ALStream::ctor: enter (threadId=%s)\n", threadId.c_str());
 	alSrc = AL::Source::gen();
-	printf("ALStream::ctor: after Source::gen\n"); fflush(stdout);
+	SWITCH_TRACE("ALStream::ctor: after Source::gen\n");
 
 	AL::Source::setVolume(alSrc, 1.0f);
 	AL::Source::setPitch(alSrc, 1.0f);
 	AL::Source::detachBuffer(alSrc);
-	printf("ALStream::ctor: after Source setup\n"); fflush(stdout);
+	SWITCH_TRACE("ALStream::ctor: after Source setup\n");
 
 	for (int i = 0; i < STREAM_BUFS; ++i)
 		alBuf[i] = AL::Buffer::gen();
-	printf("ALStream::ctor: after Buffer::gen\n"); fflush(stdout);
+	SWITCH_TRACE("ALStream::ctor: after Buffer::gen\n");
 
 	pauseMut = SDL_CreateMutex();
 
 	threadName = std::string("al_stream (") + threadId + ")";
-	printf("ALStream::ctor: exit\n"); fflush(stdout);
+	SWITCH_TRACE("ALStream::ctor: exit\n");
 }
 
 ALStream::~ALStream()

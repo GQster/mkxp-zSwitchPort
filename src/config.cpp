@@ -6,6 +6,7 @@
 //
 
 #include "config.h"
+#include "switch-trace.h"
 #include <SDL_filesystem.h>
 #include <assert.h>
 
@@ -99,12 +100,10 @@ bool getEnvironmentBool(const char *env, bool defaultValue) {
 }
 
 json::value readConfFile(const char *path) {
-    printf("readConfFile: Checking %s\n", path);
-    fflush(stdout);
+    SWITCH_TRACE("readConfFile: Checking %s\n", path);
     
     // TEMPORARY DEBUG: Disable config loading to prevent crash
-    printf("readConfFile: SKIPPING JSON PARSE to debug crash\n");
-    fflush(stdout);
+    SWITCH_TRACE("readConfFile: SKIPPING JSON PARSE to debug crash\n");
     return json::object({});
 
     /*
@@ -116,14 +115,11 @@ json::value readConfFile(const char *path) {
     }
     
     try {
-        printf("readConfFile: Reading %s\n", path);
-        fflush(stdout);
+        SWITCH_TRACE("readConfFile: Reading %s\n", path);
         std::string cfg = mkxp_fs::contentsOfFileAsString(path);
-        printf("readConfFile: Read %lu bytes. Parsing JSON...\n", cfg.length());
-        fflush(stdout);
+        SWITCH_TRACE("readConfFile: Read %lu bytes. Parsing JSON...\n", cfg.length());
         ret = json::parse5(Encoding::convertString(cfg));
-        printf("readConfFile: JSON parse successful\n");
-        fflush(stdout);
+        SWITCH_TRACE("readConfFile: JSON parse successful\n");
     }
     catch (const std::exception &e) {
         printf("readConfFile: Exception: %s\n", e.what());

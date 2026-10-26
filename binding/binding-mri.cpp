@@ -20,6 +20,7 @@
  */
 
 #include "audio/audio.h"
+#include "switch-trace.h"
 #include "filesystem/filesystem.h"
 #include "display/graphics.h"
 #include "display/font.h"
@@ -1186,7 +1187,7 @@ static void showExc(VALUE exc, const BacktraceData &btData) {
 }
 
 static void mriBindingExecute() {
-    printf("mriBindingExecute: enter\n"); fflush(stdout);
+    SWITCH_TRACE("mriBindingExecute: enter\n");
     Config &conf = shState->rtData().config;
     
 #if RAPI_MAJOR >= 2
@@ -1200,19 +1201,19 @@ static void mriBindingExecute() {
 #else
 #endif
     
-    printf("mriBindingExecute: before RUBY_INIT_STACK\n"); fflush(stdout);
+    SWITCH_TRACE("mriBindingExecute: before RUBY_INIT_STACK\n");
     RUBY_INIT_STACK;
-    printf("mriBindingExecute: after RUBY_INIT_STACK\n"); fflush(stdout);
+    SWITCH_TRACE("mriBindingExecute: after RUBY_INIT_STACK\n");
 
-    printf("mriBindingExecute: before ruby_init\n"); fflush(stdout);
+    SWITCH_TRACE("mriBindingExecute: before ruby_init\n");
     ruby_init();
-    printf("mriBindingExecute: after ruby_init\n"); fflush(stdout);
+    SWITCH_TRACE("mriBindingExecute: after ruby_init\n");
     
-    printf("mriBindingExecute: setting up rubyArgsC\n"); fflush(stdout);
+    SWITCH_TRACE("mriBindingExecute: setting up rubyArgsC\n");
     std::vector<const char*> rubyArgsC{"mkxp-z"};
     rubyArgsC.push_back("-e ");
     void *node;
-    printf("mriBindingExecute: jit.enabled=%d, yjit.enabled=%d\n", conf.jit.enabled, conf.yjit.enabled); fflush(stdout);
+    SWITCH_TRACE("mriBindingExecute: jit.enabled=%d, yjit.enabled=%d\n", conf.jit.enabled, conf.yjit.enabled);
     if (conf.jit.enabled) {
 #if RAPI_FULL >= 310
         // Ruby v3.1.0 renamed the --jit options to --mjit.

@@ -1,4 +1,5 @@
 #include "switch_assert_compat.h"
+#include "switch-trace.h"
 /*
 ** sharedmidistate.h
 **
@@ -51,9 +52,8 @@ struct SharedMidiState
 	    : inited(false),
 	      soundFont(conf.midi.soundFont)
 	{
-	    printf("SharedMidiState::ctor: soundFont='%s'\n",
+	    SWITCH_TRACE("SharedMidiState::ctor: soundFont='%s'\n",
 	           soundFont.c_str());
-	    fflush(stdout);
 	}
 
 	~SharedMidiState()

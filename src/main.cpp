@@ -21,6 +21,7 @@
 
 #ifndef MKXPZ_BUILD_XCODE
 #include "icon.png.xxd"
+#include "switch-trace.h"
 // SWITCH_OPENAL_PATCH
 #endif
 
@@ -145,8 +146,7 @@ int rgssThreadFun(void *userdata) {
   SDL_GL_MakeCurrent(threadData->window, threadData->glContext);
 #endif
 
-  printf("RGSS thread: GL init done\n");
-  fflush(stdout);
+  SWITCH_TRACE("RGSS thread: GL init done\n");
 
   /* Setup AL context */
   ALCcontext *alcCtx = alcCreateContext(threadData->alcDev, 0);
@@ -159,15 +159,12 @@ int rgssThreadFun(void *userdata) {
   }
 
   alcMakeContextCurrent(alcCtx);
-  printf("RGSS thread: OpenAL context created\n");
-  fflush(stdout);
+  SWITCH_TRACE("RGSS thread: OpenAL context created\n");
 
   try {
-    printf("RGSS thread: before SharedState::initInstance\n");
-    fflush(stdout);
+    SWITCH_TRACE("RGSS thread: before SharedState::initInstance\n");
     SharedState::initInstance(threadData);
-    printf("RGSS thread: after SharedState::initInstance\n");
-    fflush(stdout);
+    SWITCH_TRACE("RGSS thread: after SharedState::initInstance\n");
   } catch (const Exception &exc) {
     printf("RGSS thread: EXCEPTION in SharedState::initInstance: %s\n", exc.msg.c_str());
     fflush(stdout);
@@ -177,14 +174,12 @@ int rgssThreadFun(void *userdata) {
     return 0;
   }
 
-  printf("RGSS thread: before scriptBinding->execute()\n");
-  fflush(stdout);
+  SWITCH_TRACE("RGSS thread: before scriptBinding->execute()\n");
 
   /* Start script execution */
   scriptBinding->execute();
 
-  printf("RGSS thread: after scriptBinding->execute()\n");
-  fflush(stdout);
+  SWITCH_TRACE("RGSS thread: after scriptBinding->execute()\n");
 
   threadData->rqTermAck.set();
   threadData->ethread->requestTerminate();
@@ -252,14 +247,12 @@ int main(int argc, char *argv[]) {
     switch_enable_logging();
     printf("mkxp-z: game folder '%s'\n", switchGameDir);
 #endif
-    printf("mkxp-z: entering main()\n");
-    fflush(stdout);
+    SWITCH_TRACE("mkxp-z: entering main()\n");
 
     // Print arguments for debugging
     for(int i = 0; i < argc; i++) {
-        printf("Arg %d: %s\n", i, argv[i]);
+        SWITCH_TRACE("Arg %d: %s\n", i, argv[i]);
     }
-    fflush(stdout);
 
     SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");
     SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
@@ -268,8 +261,7 @@ int main(int argc, char *argv[]) {
     SDL_SetHint(SDL_HINT_OPENGL_ES_DRIVER, "1");
 #endif
 
-    printf("mkxp-z: before SDL_Init\n");
-    fflush(stdout);
+    SWITCH_TRACE("mkxp-z: before SDL_Init\n");
 
     /* initialize SDL first */
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_TIMER) < 0) {
@@ -279,8 +271,7 @@ int main(int argc, char *argv[]) {
       return 0;
     }
 
-    printf("mkxp-z: after SDL_Init\n");
-    fflush(stdout);
+    SWITCH_TRACE("mkxp-z: after SDL_Init\n");
 
     if (!EventThread::allocUserEvents()) {
       printf("mkxp-z: EventThread::allocUserEvents failed\n");
@@ -289,8 +280,7 @@ int main(int argc, char *argv[]) {
       return 0;
     }
 
-    printf("mkxp-z: after EventThread::allocUserEvents\n");
-    fflush(stdout);
+    SWITCH_TRACE("mkxp-z: after EventThread::allocUserEvents\n");
 
 #ifndef WORKDIR_CURRENT
     char dataDir[512]{};
@@ -319,8 +309,7 @@ int main(int argc, char *argv[]) {
     Config conf;
 
 #ifdef __SWITCH__
-    printf("mkxp-z: SKIPPING Config::read() on Switch (temporary)\n");
-    fflush(stdout);
+    SWITCH_TRACE("mkxp-z: SKIPPING Config::read() on Switch (temporary)\n");
 
     // Minimal manual setup before we read Game.ini
     conf.rgssVersion = 0;          // let readGameINI() guess from Scripts extension
@@ -335,12 +324,10 @@ int main(int argc, char *argv[]) {
     conf.preloadScripts.push_back("romfs:/preload/socket_stub.rb");
 
     try {
-        printf("mkxp-z: calling Config::readGameINI()\n");
-        fflush(stdout);
+        SWITCH_TRACE("mkxp-z: calling Config::readGameINI()\n");
         conf.readGameINI();
-        printf("mkxp-z: readGameINI() finished, title='%s', rgssVersion=%d\n",
+        SWITCH_TRACE("mkxp-z: readGameINI() finished, title='%s', rgssVersion=%d\n",
                conf.game.title.c_str(), conf.rgssVersion);
-        fflush(stdout);
     } catch (const std::exception &e) {
         printf("mkxp-z: EXCEPTION in readGameINI(): %s\n", e.what());
         fflush(stdout);
@@ -398,8 +385,7 @@ int main(int argc, char *argv[]) {
     assert(conf.rgssVersion >= 1 && conf.rgssVersion <= 3);
     printRgssVersion(conf.rgssVersion);
 
-    printf("mkxp-z: before IMG_Init\n");
-    fflush(stdout);
+    SWITCH_TRACE("mkxp-z: before IMG_Init\n");
 
     int imgFlags = IMG_INIT_PNG | IMG_INIT_JPG;
     if (IMG_Init(imgFlags) != imgFlags) {
@@ -414,8 +400,7 @@ int main(int argc, char *argv[]) {
       return 0;
     }
 
-    printf("mkxp-z: after IMG_Init\n");
-    fflush(stdout);
+    SWITCH_TRACE("mkxp-z: after IMG_Init\n");
 
     if (TTF_Init() < 0) {
       showInitError(std::string("Error initializing SDL_ttf: ") +
@@ -430,8 +415,7 @@ int main(int argc, char *argv[]) {
       return 0;
     }
 
-    printf("mkxp-z: after TTF_Init\n");
-    fflush(stdout);
+    SWITCH_TRACE("mkxp-z: after TTF_Init\n");
 
 #ifdef __SWITCH__
 // TODO grant: SDL_sound doesn't work on switch QUICK TEST DISABLING SOUND
@@ -486,8 +470,7 @@ int main(int argc, char *argv[]) {
 #endif
 #endif
 
-    printf("mkxp-z: before SDL_CreateWindow\n");
-    fflush(stdout);
+    SWITCH_TRACE("mkxp-z: before SDL_CreateWindow\n");
     
     win = SDL_CreateWindow(conf.windowTitle.c_str(), SDL_WINDOWPOS_UNDEFINED,
                            SDL_WINDOWPOS_UNDEFINED, conf.defScreenW,
@@ -502,8 +485,7 @@ int main(int argc, char *argv[]) {
       return 0;
     }
     
-    printf("mkxp-z: after SDL_CreateWindow\n");
-    fflush(stdout);
+    SWITCH_TRACE("mkxp-z: after SDL_CreateWindow\n");
 
 #ifdef MKXPZ_BUILD_XCODE
     {
@@ -560,8 +542,7 @@ int main(int argc, char *argv[]) {
       return 0;
     }
 
-    printf("mkxp-z: after alcOpenDevice\n");
-    fflush(stdout);
+    SWITCH_TRACE("mkxp-z: after alcOpenDevice\n");
     SDL_DisplayMode mode;
     SDL_GetDisplayMode(0, 0, &mode);
 
@@ -596,18 +577,15 @@ int main(int argc, char *argv[]) {
 #endif
 
     /* Start RGSS thread */
-    printf("mkxp-z: before SDL_CreateThread (RGSS)\n");
-    fflush(stdout);
+    SWITCH_TRACE("mkxp-z: before SDL_CreateThread (RGSS)\n");
     SDL_Thread *rgssThread = SDL_CreateThread(rgssThreadFun, "rgss", &rtData);
 
-    printf("mkxp-z: after SDL_CreateThread, before eventThread.process\n");
-    fflush(stdout);
+    SWITCH_TRACE("mkxp-z: after SDL_CreateThread, before eventThread.process\n");
 
     /* Start event processing */
     eventThread.process(rtData);
 
-    printf("mkxp-z: after eventThread.process, before rqTerm.set\n");
-    fflush(stdout);
+    SWITCH_TRACE("mkxp-z: after eventThread.process, before rqTerm.set\n");
 
     /* Request RGSS thread to stop */
     rtData.rqTerm.set();
@@ -643,8 +621,7 @@ int main(int argc, char *argv[]) {
     if (rtData.glContext)
       SDL_GL_DeleteContext(rtData.glContext);
 
-    printf("mkxp-z: main() reaching shutdown path\n");
-    fflush(stdout);
+    SWITCH_TRACE("mkxp-z: main() reaching shutdown path\n");
 
     /* Clean up any remainin events */
     eventThread.cleanup();
@@ -670,8 +647,7 @@ int main(int argc, char *argv[]) {
     switch_return_to_picker(argc > 0 ? argv[0] : NULL);
 #endif
 
-    printf("mkxp-z: leaving main()\n");
-    fflush(stdout);
+    SWITCH_TRACE("mkxp-z: leaving main()\n");
     return 0;
 }
 

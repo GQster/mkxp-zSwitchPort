@@ -20,6 +20,7 @@
 */
 
 #include "audio.h"
+#include "switch-trace.h"
 
 #include "audiostream.h"
 #include "soundemitter.h"
@@ -75,18 +76,18 @@ struct AudioPrivate
 	      syncPoint(rtData.syncPoint),
           volumeRatio(1)
 	{
-        printf("AudioPrivate::ctor: enter\n"); fflush(stdout);
+        SWITCH_TRACE("AudioPrivate::ctor: enter\n");
         for (int i = 0; i < rtData.config.BGM.trackCount; i++) {
             std::string id = std::string("bgm" + std::to_string(i));
             bgmTracks.push_back(new AudioStream(ALStream::Looped, id.c_str()));
         }
-        printf("AudioPrivate::ctor: after bgmTracks\n"); fflush(stdout);
+        SWITCH_TRACE("AudioPrivate::ctor: after bgmTracks\n");
         
 		meWatch.state = MeNotPlaying;
-        printf("AudioPrivate::ctor: before createSDLThread\n"); fflush(stdout);
+        SWITCH_TRACE("AudioPrivate::ctor: before createSDLThread\n");
 		meWatch.thread = createSDLThread
 			<AudioPrivate, &AudioPrivate::meWatchFun>(this, "audio_mewatch");
-        printf("AudioPrivate::ctor: exit\n"); fflush(stdout);
+        SWITCH_TRACE("AudioPrivate::ctor: exit\n");
 	}
 
 	~AudioPrivate()
@@ -291,7 +292,7 @@ struct AudioPrivate
 Audio::Audio(RGSSThreadData &rtData)
 	: p(new AudioPrivate(rtData))
 {
-    printf("Audio::Audio: ctor complete\n"); fflush(stdout);
+    SWITCH_TRACE("Audio::Audio: ctor complete\n");
 }
 
 

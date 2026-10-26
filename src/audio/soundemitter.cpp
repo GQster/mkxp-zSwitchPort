@@ -20,6 +20,7 @@
 */
 
 #include "soundemitter.h"
+#include "switch-trace.h"
 
 #include "sharedstate.h"
 #include "filesystem.h"
@@ -95,14 +96,14 @@ SoundEmitter::SoundEmitter(const Config &conf)
       atchBufs(srcCount),
       srcPrio(srcCount)
 {
-	printf("SoundEmitter::ctor: enter, srcCount=%zu\n", srcCount); fflush(stdout);
+	SWITCH_TRACE("SoundEmitter::ctor: enter, srcCount=%zu\n", srcCount);
 	for (size_t i = 0; i < srcCount; ++i)
 	{
 		alSrcs[i] = AL::Source::gen();
 		atchBufs[i] = 0;
 		srcPrio[i] = i;
 	}
-	printf("SoundEmitter::ctor: exit\n"); fflush(stdout);
+	SWITCH_TRACE("SoundEmitter::ctor: exit\n");
 }
 
 SoundEmitter::~SoundEmitter()

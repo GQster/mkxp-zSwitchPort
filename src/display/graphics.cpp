@@ -20,6 +20,7 @@
  */
 
 #include "graphics.h"
+#include "switch-trace.h"
 
 #include "alstream.h"
 #include "audio.h"
@@ -859,7 +860,7 @@ struct GraphicsPrivate {
     integerScaleActive(rtData->config.integerScaling.active),
     integerLastMileScaling(rtData->config.integerScaling.lastMileScaling) 
     {
-        printf("GraphicsPrivate::ctor: begin\n"); fflush(stdout);
+        SWITCH_TRACE("GraphicsPrivate::ctor: begin\n");
 
         avgFPSData = std::vector<double>();
         avgFPSLock = SDL_CreateMutex();
@@ -882,11 +883,11 @@ struct GraphicsPrivate {
         
         fpsLimiter.resetFrameAdjust();
 
-        printf("GraphicsPrivate::ctor: end\n"); fflush(stdout);
+        SWITCH_TRACE("GraphicsPrivate::ctor: end\n");
     }
     
     ~GraphicsPrivate() {
-        printf("GraphicsPrivate::dtor: begin\n"); fflush(stdout);
+        SWITCH_TRACE("GraphicsPrivate::dtor: begin\n");
         TEXFBO::fini(frozenScene);
         TEXFBO::fini(integerScaleBuffer);
         SDL_DestroyMutex(avgFPSLock);

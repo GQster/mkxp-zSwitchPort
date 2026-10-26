@@ -20,6 +20,7 @@
  */
 
 #include "input.h"
+#include "switch-trace.h"
 #include "config.h"
 #include "sharedstate.h"
 #include "eventthread.h"
@@ -1192,9 +1193,9 @@ struct InputPrivate
 
 Input::Input(const RGSSThreadData &rtData)
 {
-    printf("Input::Input: enter\n"); fflush(stdout);
+    SWITCH_TRACE("Input::Input: enter\n");
     p = new InputPrivate(rtData);
-    printf("Input::Input: exit\n"); fflush(stdout);
+    SWITCH_TRACE("Input::Input: exit\n");
 }
 
 double Input::getDelta() {

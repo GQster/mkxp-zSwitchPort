@@ -121,14 +121,6 @@ if ! grep -q "PHYSFS_SWITCH_DEBUG_PATCH" "$PHYSFS_C"; then
 #endif\
     if (!__PHYSFS_platformInit())/g' "$PHYSFS_C"
 
-    # Add debug logging inside platformInit failure block
-    sed -i '/if (!__PHYSFS_platformInit())/,/^{$/ {
-        /^{$/a\
-#ifdef __SWITCH__\
-        printf("PHYSFS_init: platformInit FAILED\\n"); fflush(stdout);\
-#endif
-    }' "$PHYSFS_C"
-    
     # Add debug logging before calculateBaseDir
     sed -i 's/baseDir = calculateBaseDir(argv0);/\
 #ifdef __SWITCH__\
@@ -199,6 +191,33 @@ if ! grep -q "PHYSFS_SWITCH_MUTEX_DEBUG" "$PHYSFS_POSIX_C"; then
 else
     echo ">>> PhysFS mutex debug logging already added."
 fi
+
+# ────────────────────────────────────────────────────────────
+# Fix up the debug logging (idempotent, also for already patched trees):
+# - an earlier "platformInit FAILED" print matched the wrong "{" and landed
+#   at the top of closeFileHandleList(), so it printed on every shutdown
+# - trace prints only show with mkxp-z's debug switch (switch_trace_enabled,
+#   see src/util/switch-trace.h); failure prints stay unconditional
+# ────────────────────────────────────────────────────────────
+python3 - "$PHYSFS_C" "$PHYSFS_POSIX_C" << 'PYTRACE'
+import re, sys
+MACRO = ("/* PHYSFS_SWITCH_TRACE_PATCH */\n#ifdef __SWITCH__\n#include <stdio.h>\n"
+         "extern int switch_trace_enabled;\n"
+         "#define PHYSFS_SWITCH_TRACE(...) \\\n"
+         "    do { if (switch_trace_enabled) { printf(__VA_ARGS__); fflush(stdout); } } while (0)\n"
+         "#endif\n")
+for path in sys.argv[1:]:
+    s = open(path).read()
+    s = s.replace('#ifdef __SWITCH__\n        printf("PHYSFS_init: platformInit FAILED\\n"); '
+                  'fflush(stdout);\n#endif\n', '')
+    s = re.sub(r'printf\(("(?:PHYSFS_init|Mutex): (?![^"]*(?:FAILED|failed))[^;]*?)\); fflush\(stdout\);',
+               r'PHYSFS_SWITCH_TRACE(\1);', s)
+    s = re.sub(r'printf\(("(?:PHYSFS_init|Mutex): (?![^"]*(?:FAILED|failed))[^;]*?)\);\n(\s*)fflush\(stdout\);',
+               r'PHYSFS_SWITCH_TRACE(\1);', s)
+    if "PHYSFS_SWITCH_TRACE(" in s and "PHYSFS_SWITCH_TRACE_PATCH" not in s:
+        s = MACRO + s
+    open(path, 'w').write(s)
+PYTRACE
 
 cmake -S "${TOPDIR}/physfs-src" -B "${TOPDIR}/physfs-build" \
     -DCMAKE_SYSTEM_NAME=Generic \

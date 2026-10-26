@@ -105,3 +105,10 @@ mkxp-z-switch/
 └─ ruby-3.2.2/
 └─ SDL_sound-build/
 └─ <everything else from the repo>/
+
+## 🐞 Logging
+
+Every launch writes `sdmc:/mkxpz_log.txt` (Ruby errors, warnings and mkxp-z
+messages). For a step-by-step startup trace, create an empty file
+`sdmc:/switch/mkxp-z/debug.txt`; the log header then reads
+`(debug tracing on)`. Delete the file to turn tracing off again.

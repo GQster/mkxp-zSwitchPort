@@ -12,6 +12,13 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
+// Verbose SWITCH_TRACE output (src/util/switch-trace.h), on when this exists
+#define DEBUG_FLAG_FILE "sdmc:/switch/mkxp-z/debug.txt"
+
+extern "C" {
+int switch_trace_enabled = 0;
+}
+
 // Helper to redirect stdout/stderr to a file on the SD card
 void setup_file_logging() {
     // Open a file on the SD card root
@@ -32,7 +39,10 @@ void setup_file_logging() {
         setvbuf(stdout, NULL, _IONBF, 0);
         setvbuf(stderr, NULL, _IONBF, 0);
 
-        printf("--- MKXP-Z Switch Log Start ---\n");
+        struct stat st;
+        switch_trace_enabled = stat(DEBUG_FLAG_FILE, &st) == 0;
+        printf("--- MKXP-Z Switch Log Start ---%s\n",
+               switch_trace_enabled ? " (debug tracing on)" : "");
     }
 }
 
