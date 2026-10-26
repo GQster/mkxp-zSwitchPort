@@ -848,7 +848,12 @@ static VALUE evalHelper(evalArg *arg) {
     // work under the Ruby 3.0 that Windows mkxp-z games ship with. Start every
     // script in public scope. (self is nil here, hence Object.__send__.) The
     // extra line is offset by passing line 0, so line numbers are unchanged.
-    VALUE src = rb_str_plus(rb_str_new_cstr("Object.__send__(:public)\n"), arg->string);
+    // A UTF-8 BOM is only skipped at the very start of the source, so drop it
+    // here rather than leave it at the start of line 2.
+    VALUE body = arg->string;
+    if (RSTRING_LEN(body) >= 3 && !memcmp(RSTRING_PTR(body), "\xEF\xBB\xBF", 3))
+        body = rb_str_subseq(body, 3, RSTRING_LEN(body) - 3); // bytes
+    VALUE src = rb_str_plus(rb_str_new_cstr("Object.__send__(:public)\n"), body);
     VALUE argv[] = {src, Qnil, arg->filename, INT2FIX(0)};
     return rb_funcall2(Qnil, rb_intern("eval"), ARRAY_SIZE(argv), argv);
 }
