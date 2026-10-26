@@ -51,10 +51,6 @@ extern "C" {
 #if RAPI_FULL >= 190
 #include <ruby/encoding.h>
 #endif
-
-#ifdef __SWITCH__
-void Init_zlib(void);
-#endif
 }
 
 #ifdef __WIN32__
@@ -288,13 +284,6 @@ static void mriBindingInit() {
     rb_str_freeze(vers);
     rb_define_const(mod, "VERSION", vers);
     
-#ifdef __SWITCH__
-    // The Switch libruby has zlib compiled in but no extinit table, so
-    // require can't find it. Initialize it directly and mark it loaded.
-    Init_zlib();
-    rb_provide("zlib.so");
-#endif
-
     // Automatically load zlib if it's present -- the correct way this time
     int state;
     rb_eval_string_protect("require('zlib') if !Kernel.const_defined?(:Zlib)", &state);

@@ -362,6 +362,7 @@ echo ">>> Configuring Ruby..."
     --enable-static \
     --with-compress-debug-sections=none \
     --with-coroutine=arm64 \
+    --with-static-linked-ext \
     --with-out-ext=openssl,readline,dbm,gdbm,pty,syslog,fiddle,bigdecimal,-test- \
     ac_cv_func_fork=no \
     ac_cv_func_mmap=no \
@@ -574,6 +575,11 @@ fi
 echo "    Adding extension objects..."
 find ext -name "*.o" ! -name "extinit.o" -exec ${AR} q "${INSTALL_DIR}/lib/libruby-static.a" {} + 2>/dev/null || true
 find enc -name "*.o" -exec ${AR} q "${INSTALL_DIR}/lib/libruby-static.a" {} + 2>/dev/null || true
+
+# The archive lists miniruby's empty dmyext.o/dmyenc.o before the extinit.o/
+# encinit.o appended above, so the linker would pick the empty Init_ext/
+# Init_enc and no static extension or encoding would ever be registered.
+${AR} d "${INSTALL_DIR}/lib/libruby-static.a" dmyext.o dmyenc.o
 
 # Re-index
 ${RANLIB} "${INSTALL_DIR}/lib/libruby-static.a"
