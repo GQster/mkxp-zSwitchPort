@@ -23,7 +23,11 @@
 
 #define MKXPZ_ROOT "sdmc:/switch/mkxp-z"
 #define GAMES_ROOT MKXPZ_ROOT "/Games"
+// Folder names, most recently played first
+#define HISTORY_FILE MKXPZ_ROOT "/play_history.txt"
+// Single last-played folder written by earlier versions
 #define LAST_GAME_FILE MKXPZ_ROOT "/last_game.txt"
+#define HISTORY_MAX 100
 
 namespace {
 
@@ -90,24 +94,53 @@ std::vector<GameEntry> scanGames() {
     return games;
 }
 
-std::string readLastGame() {
-    FILE *f = fopen(LAST_GAME_FILE, "r");
+std::vector<std::string> readLines(const char *path) {
+    std::vector<std::string> lines;
+    FILE *f = fopen(path, "r");
     if (!f)
-        return "";
-    char buf[256] = {};
-    if (!fgets(buf, sizeof(buf), f))
-        buf[0] = '\0';
+        return lines;
+    char buf[512];
+    while (fgets(buf, sizeof(buf), f)) {
+        std::string s(buf);
+        s.erase(s.find_last_not_of("\r\n") + 1);
+        if (!s.empty())
+            lines.push_back(s);
+    }
     fclose(f);
-    std::string s(buf);
-    s.erase(s.find_last_not_of("\r\n") + 1);
-    return s;
+    return lines;
 }
 
-void writeLastGame(const std::string &folder) {
-    if (FILE *f = fopen(LAST_GAME_FILE, "w")) {
-        fputs(folder.c_str(), f);
+std::vector<std::string> readHistory() {
+    std::vector<std::string> history = readLines(HISTORY_FILE);
+    if (history.empty())
+        history = readLines(LAST_GAME_FILE);
+    return history;
+}
+
+// Moves folder to the front of the play history
+void recordPlayed(const std::string &folder) {
+    std::vector<std::string> history = readHistory();
+    history.erase(std::remove(history.begin(), history.end(), folder), history.end());
+    history.insert(history.begin(), folder);
+    if (history.size() > HISTORY_MAX)
+        history.resize(HISTORY_MAX);
+    if (FILE *f = fopen(HISTORY_FILE, "w")) {
+        for (const std::string &h : history)
+            fprintf(f, "%s\n", h.c_str());
         fclose(f);
     }
+}
+
+// Most recently played first, then never-played games alphabetically
+void sortByLastPlayed(std::vector<GameEntry> &games) {
+    std::vector<std::string> history = readHistory();
+    auto rank = [&](const GameEntry &g) {
+        auto it = std::find(history.begin(), history.end(), g.folder);
+        return it == history.end() ? history.size() : (size_t)(it - history.begin());
+    };
+    std::stable_sort(games.begin(), games.end(), [&](const GameEntry &a, const GameEntry &b) {
+        return rank(a) < rank(b);
+    });
 }
 
 const int LIST_ROWS = 36;
@@ -128,7 +161,7 @@ void drawMenu(const std::vector<GameEntry> &games, int sel, int top) {
             label.resize(74);
         printf("\x1b[%d;2H%s%s%s", 4 + row, cur ? "\x1b[30;47m> " : "  ", label.c_str(), "\x1b[0m");
     }
-    printf("\x1b[43;2HUp/Down: select   A: play   +: exit");
+    printf("\x1b[43;2HUp/Down: select   A: play   B/+: exit to hbmenu");
     printf("\x1b[44;2H%s", GAMES_ROOT "/<game folder>/Game.ini");
     consoleUpdate(NULL);
 }
@@ -165,11 +198,9 @@ extern "C" bool switch_pick_game(char *out, size_t outSize) {
     menuShown = true;
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
 
+    // The most recently played game comes first and starts selected
+    sortByLastPlayed(games);
     int sel = 0;
-    std::string last = readLastGame();
-    for (size_t i = 0; i < games.size(); ++i)
-        if (games[i].folder == last)
-            sel = (int)i;
 
     if (!games.empty()) {
         std::vector<PickerGame> uiGames;
@@ -179,7 +210,7 @@ extern "C" bool switch_pick_game(char *out, size_t outSize) {
         if (r == PICKER_QUIT)
             return false;
         if (r == PICKER_PICKED) {
-            writeLastGame(games[sel].folder);
+            recordPlayed(games[sel].folder);
             snprintf(out, outSize, GAMES_ROOT "/%s", games[sel].folder.c_str());
             return true;
         }
@@ -206,7 +237,7 @@ extern "C" bool switch_pick_game(char *out, size_t outSize) {
         u64 down = padGetButtonsDown(&pad);
         int prev = sel;
 
-        if (down & HidNpadButton_Plus)
+        if (down & (HidNpadButton_Plus | HidNpadButton_B))
             break;
         if (down & HidNpadButton_A) {
             picked = true;
@@ -231,7 +262,7 @@ extern "C" bool switch_pick_game(char *out, size_t outSize) {
     if (!picked)
         return false;
 
-    writeLastGame(games[sel].folder);
+    recordPlayed(games[sel].folder);
     snprintf(out, outSize, GAMES_ROOT "/%s", games[sel].folder.c_str());
     return true;
 }

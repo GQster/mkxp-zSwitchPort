@@ -344,7 +344,7 @@ void drawFrame(SDL_Surface *c, const Fonts &fonts, const std::vector<PickerGame>
     char count[32];
     snprintf(count, sizeof(count), "%d / %d", sel + 1, (int)games.size());
     drawText(c, fonts.small, count, TEXT_DIM, 60, FOOTER_Y + 22, LEFT);
-    int right = drawHint(c, fonts, "+", "Exit", SCREEN_W - 60);
+    int right = drawHint(c, fonts, "B", "Exit to hbmenu", SCREEN_W - 60);
     drawHint(c, fonts, "A", "Start", right);
 }
 
@@ -410,8 +410,8 @@ PickerResult pickerUiRun(const std::vector<PickerGame> &games, int &sel) {
             u64 held = padGetButtons(&pad);
             u64 now = armTicksToNs(armGetSystemTick());
 
-            if (down & HidNpadButton_Plus)
-                break;
+            if (down & (HidNpadButton_Plus | HidNpadButton_B))
+                break; // back to hbmenu
             if (down & HidNpadButton_A) {
                 result = PICKER_PICKED;
                 break;
