@@ -124,8 +124,12 @@ echo ""
 if command -v nacptool > /dev/null 2>&1 && command -v elf2nro > /dev/null 2>&1; then
     echo "📦 Generating .nacp and .nro files..."
     
-    # Create .nacp metadata file
-    nacptool --create "mkxp-z" "mkxp-z Team" "1.0.0" "${BUILD}/mkxp-z.nacp"
+    # Create .nacp metadata file (shown by hbmenu): mkxp-z's version from
+    # meson.build plus the commit, e.g. 2.4.2-e0c8ec5 (16 chars max)
+    VERSION=$(grep -m1 -o "^project(.*" "${ROOT}/meson.build" | grep -o "[ (,]version: '[^']*'" | cut -d"'" -f2)
+    COMMIT=$(git -C "${ROOT}" rev-parse --short=7 HEAD 2>/dev/null || true)
+    NRO_VERSION="${VERSION:-0}${COMMIT:+-${COMMIT}}"
+    nacptool --create "mkxp-z" "mkxp-z (Switch port)" "${NRO_VERSION:0:16}" "${BUILD}/mkxp-z.nacp"
     
     if [ -f "${BUILD}/mkxp-z.nacp" ]; then
         echo "  ✅ Generated: ${BUILD}/mkxp-z.nacp"
@@ -137,6 +141,7 @@ if command -v nacptool > /dev/null 2>&1 && command -v elf2nro > /dev/null 2>&1; 
 
         # Generate .nro with .nacp
         elf2nro "${BUILD}/mkxp-z" "${BUILD}/mkxp-z.nro" \
+            --icon="${ROOT}/switch/icon.jpg" \
             --nacp="${BUILD}/mkxp-z.nacp" \
             --romfsdir="${BUILD}/romfs"
         if [ -f "${BUILD}/mkxp-z.nro" ]; then
