@@ -228,6 +228,14 @@ struct ALStreamOpenHandler : FileSystem::OpenHandler
 					source = createMidiSource(ops, looped);
 					return true;
 				}
+#ifdef __SWITCH__
+				/* No fluidsynth on Switch, and SDL_sound's MIDI decoder
+				 * blocks forever without patches. Skip the file so a
+				 * same-named non-MIDI track (e.g. Title.ogg) is tried. */
+				SDL_RWclose(&ops);
+				errorMsg = "MIDI playback is unavailable";
+				return false;
+#endif
 			}
 
 			source = createSDLSource(ops, ext, STREAM_BUF_SIZE, looped);
