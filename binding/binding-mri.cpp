@@ -842,7 +842,14 @@ struct evalArg {
 };
 
 static VALUE evalHelper(evalArg *arg) {
-    VALUE argv[] = {arg->string, Qnil, arg->filename};
+    // Evaluated from C, scripts inherit the VM's private toplevel scope on
+    // Ruby 3.2, so their top-level defs are private and calls like
+    // Kernel.pbShowCommands (Pokemon Essentials) raise NoMethodError; they
+    // work under the Ruby 3.0 that Windows mkxp-z games ship with. Start every
+    // script in public scope. (self is nil here, hence Object.__send__.) The
+    // extra line is offset by passing line 0, so line numbers are unchanged.
+    VALUE src = rb_str_plus(rb_str_new_cstr("Object.__send__(:public)\n"), arg->string);
+    VALUE argv[] = {src, Qnil, arg->filename, INT2FIX(0)};
     return rb_funcall2(Qnil, rb_intern("eval"), ARRAY_SIZE(argv), argv);
 }
 
