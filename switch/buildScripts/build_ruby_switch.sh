@@ -128,6 +128,17 @@ int pipe(int pipefd[2]) { return -1; }
 
 int pthread_kill(pthread_t thread, int sig) { return 0; }
 
+#include <switch/kernel/thread.h>
+// Bounds of the calling thread's stack, for Ruby's get_stack() (patched into
+// thread_pthread.c below). Kept here so Ruby never sees libnx's typedefs.
+int rb_switch_get_stack(void **addr, size_t *size) {
+    Thread *t = threadGetSelf();
+    if (!t || !t->stack_mirror) return -1;
+    *addr = t->stack_mirror; /* libnx threads run on the mirror mapping */
+    *size = t->stack_sz;
+    return 0;
+}
+
 #include <string.h>
 #include <sys/stat.h>
 
@@ -517,6 +528,45 @@ with open('gc.c', 'w') as f:
     f.write(content)
 
 print("    ✓ Signal handlers wrapped with #ifndef __SWITCH__")
+PYTHON_EOF
+
+# Without a known stack-bounds API, every non-main Ruby thread raises
+# NotImplementedError from its native thread and aborts. Get the bounds
+# from libnx via rb_switch_get_stack() (switch_shim.c).
+echo "    → Patching thread_pthread.c (libnx thread stacks, main-thread sleep)"
+python3 << 'PYTHON_EOF'
+with open('thread_pthread.c', 'r') as f:
+    content = f.read()
+
+def patch(old, new):
+    global content
+    assert content.count(old) == 1, old
+    content = content.replace(old, new)
+
+patch('#if defined HAVE_PTHREAD_GETATTR_NP || defined HAVE_PTHREAD_ATTR_GET_NP\n#define STACKADDR_AVAILABLE 1\n',
+      '#if defined __SWITCH__\n#define STACKADDR_AVAILABLE 1\nint rb_switch_get_stack(void **addr, size_t *size);\n'
+      '#elif defined HAVE_PTHREAD_GETATTR_NP || defined HAVE_PTHREAD_ATTR_GET_NP\n#define STACKADDR_AVAILABLE 1\n')
+patch('#ifdef HAVE_PTHREAD_GETATTR_NP /* Linux */\n    pthread_attr_t attr;\n    size_t guard = 0;',
+      '#if defined __SWITCH__ /* libnx */\n    STACK_GROW_DIR_DETECTION;\n'
+      '    if (rb_switch_get_stack(addr, size) != 0) return ENOSYS;\n'
+      '    STACK_DIR_UPPER((void)0, (void)(*addr = (char *)*addr + *size));\n'
+      '#elif defined HAVE_PTHREAD_GETATTR_NP /* Linux */\n    pthread_attr_t attr;\n    size_t guard = 0;')
+# newlib has no PTHREAD_STACK_MIN, so Ruby would skip setting the stack size
+# and libnx would use its small default, which the per-thread VM stack
+# (alloca'd in thread_start_func_2) overflows.
+patch('# ifdef PTHREAD_STACK_MIN\n        RUBY_DEBUG_LOG("stack size: %lu", (unsigned long)stack_size);',
+      '# if defined PTHREAD_STACK_MIN || defined __SWITCH__\n        RUBY_DEBUG_LOG("stack size: %lu", (unsigned long)stack_size);')
+# The main thread sleeps in ppoll() on the timer self-pipe. libnx has no pipe
+# ("pipe creation failed for timer"), so that ppoll waits on fd -1 forever and
+# Thread#join/sleep/Queue#pop on the main thread never return. Without the
+# pipe, sleep on a condition variable like every other thread does.
+patch('    else if (th == th->vm->ractor.main_thread) { /* always able to handle signals */\n',
+      '    else if (th == th->vm->ractor.main_thread && /* always able to handle signals */\n'
+      '             signal_self_pipe.ub_main[0] >= 0) {\n')
+
+with open('thread_pthread.c', 'w') as f:
+    f.write(content)
+print("    ✓ get_stack() implemented for libnx")
 PYTHON_EOF
 
 
