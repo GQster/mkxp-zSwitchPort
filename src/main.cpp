@@ -325,6 +325,8 @@ int main(int argc, char *argv[]) {
     // No MiniFFI on Switch: provide Win32API in Ruby (see romfs-root/preload)
     conf.preloadScripts.push_back("romfs:/preload/win32api_stub.rb");
     conf.preloadScripts.push_back("romfs:/preload/win32_wrap.rb");
+    // No socket extension on Switch: offline stand-in for require 'socket'
+    conf.preloadScripts.push_back("romfs:/preload/socket_stub.rb");
 
     try {
         printf("mkxp-z: calling Config::readGameINI()\n");
