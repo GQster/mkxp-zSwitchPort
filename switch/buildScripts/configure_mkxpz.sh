@@ -21,7 +21,11 @@ mkdir -p "${LIBS_DIR}"
 # ────────────────────────────────────────────────────────────
 echo ">>> Patching SDL2 pkg-config to remove invalid libraries..."
 SDL2_PC="${DEVKITPRO}/portlibs/switch/lib/pkgconfig/sdl2.pc"
-if [ -f "${SDL2_PC}" ]; then
+if [ -f "${SDL2_PC}" ] && [ ! -w "${SDL2_PC}" ]; then
+    # Non-root container (docker_build.sh): the image's file is read-only.
+    # Current devkitPro sdl2.pc no longer has this exact sequence anyway.
+    echo "Skipping ${SDL2_PC} patch (not writable)"
+elif [ -f "${SDL2_PC}" ]; then
     sed -i 's/-lEGL -lglapi -ldrm_nouveau//g' "${SDL2_PC}"
     echo "Patched ${SDL2_PC}"
 else

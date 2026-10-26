@@ -48,51 +48,30 @@ cd mkxp-z-switch
 ```
 
 
-### 2 – Launch the Docker Build Environment
-```bash
-cd ~/projects/mkxp-zSwitchPort/
-# Allow Docker/X11 to show windows
-xhost +local: 
-# Run the dev image, mounting your repo directly
-docker run -it --rm \
-  -e DISPLAY=$DISPLAY \
-  -v /tmp/.X11-unix:/tmp/.X11-unix \
-  -v "$(pwd)":/workspace \
-  switch-dev
-```
-or one line: 
+### 2 – Build
 
-```
-docker build -t switch-dev switch/buildScrips/. && xhost +local: && docker run -it --rm   -e DISPLAY=$DISPLAY   -v /tmp/.X11-unix:/tmp/.X11-unix   -v "$(pwd)":/workspace   switch-dev
-```
-
-You’re now inside the build environment at /workspace.
-
-## 🧩 Build Steps So Far
-### Step 1 – Build Ruby for Switch
-```bash
-./build_ruby_switch.sh
-```
-This creates a fully static Ruby 3.2.2 library compatible with libnx.
-
-libs/ruby-switch/lib/libruby-static.a
-
-
-### Step 2 – Build PhysicsFS and SDL_sound
-Run the combined dependency builder:
+`switch/buildScripts/docker_build.sh` runs each step in the `switch-dev`
+container **as your user** (so nothing in the repo ends up owned by root) and
+builds the image from `switch/buildScripts/dockerfile` if it is missing.
 
 ```bash
-./configure_mkxpz.sh
+switch/buildScripts/docker_build.sh all     # deps, Ruby, then mkxp-z.nro
+switch/buildScripts/docker_build.sh mkxpz   # just mkxp-z.nro (the default)
+switch/buildScripts/docker_build.sh shell   # interactive shell in /workspace
 ```
-This script:
 
-- Patches sdl2.pc to remove invalid libraries (-lEGL -lglapi -ldrm_nouveau).
-- Cross‑compiles PhysicsFS 3.2.0 → libs/physfs-switch/lib/libphysfs.a
-- Cross‑compiles SDL_sound 2.0.1 → libs/SDL_sound-switch/lib/libSDL2_sound.a
-- Removes all demo executables for clean static builds.
-- Both libraries are built statically for aarch64‑none‑elf and link successfully.
+| Step | Script | Output |
+|------|--------|--------|
+| `deps` | `configure_mkxpz.sh` | `libs/physfs-switch`, `libs/SDL_sound-switch` |
+| `ruby` | `build_ruby_switch.sh` | `libs/ruby-switch` (Ruby 3.2.2, static) |
+| `mkxpz` | `build_mkxpz_switch.sh` | `build-switch/mkxp-z.nro` |
 
-### Step 3 – Verify Results
+The Ruby build is incremental: it reuses the configured `ruby-3.2.2/` tree.
+Run `RUBY_CLEAN=1 switch/buildScripts/docker_build.sh ruby` after changing
+`build_ruby_switch.sh` (its configure options and source patches only apply
+to a fresh tree).
+
+### 3 – Verify Results
 After the above completes, confirm all libraries exist:
 
 ```bash
