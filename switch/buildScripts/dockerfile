@@ -2,7 +2,8 @@
 #  Nintendo Switch (libnx) cross‑build image
 #  + desktop (x86‑64) build tool‑chain
 # ──────────────────────────────────────────
-FROM devkitpro/devkita64:latest
+ARG BASE_IMAGE=devkitpro/devkita64:20251117
+FROM ${BASE_IMAGE}
 
 # ⚡ CRITICAL: Add devkitA64 compilers to PATH
 ENV DEVKITPRO=/opt/devkitpro
@@ -40,13 +41,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     meson \
     ninja-build \
     ca-certificates \
-    wget \  
+    wget \
     # Core Libraries (Host)
     libsdl2-dev \
     libsdl2-ttf-dev \
     libsdl2-image-dev \
     libopenal-dev \
-    libogg-dev \   
+    libogg-dev \
     libvorbis-dev \
     libpng-dev \
     libjpeg62-turbo-dev \
@@ -59,7 +60,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g-dev \
     libbz2-dev \
     libssl-dev \
-    xxd \      
+    xxd \
     # mkxp-z specific deps (Host)
     libtheora-dev \
     libpixman-1-dev \
