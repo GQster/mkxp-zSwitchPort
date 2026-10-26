@@ -6,7 +6,6 @@
 //
 
 #include "config.h"
-#include "switch-trace.h"
 #include <SDL_filesystem.h>
 #include <assert.h>
 
@@ -100,50 +99,27 @@ bool getEnvironmentBool(const char *env, bool defaultValue) {
 }
 
 json::value readConfFile(const char *path) {
-    SWITCH_TRACE("readConfFile: Checking %s\n", path);
     
-    // TEMPORARY DEBUG: Disable config loading to prevent crash
-    SWITCH_TRACE("readConfFile: SKIPPING JSON PARSE to debug crash\n");
-    return json::object({});
-
-    /*
     json::value ret(0);
     if (!mkxp_fs::fileExists(path)) {
-        printf("readConfFile: %s does not exist\n", path);
-        fflush(stdout);
         return json::object({});
     }
     
     try {
-        SWITCH_TRACE("readConfFile: Reading %s\n", path);
         std::string cfg = mkxp_fs::contentsOfFileAsString(path);
-        SWITCH_TRACE("readConfFile: Read %lu bytes. Parsing JSON...\n", cfg.length());
         ret = json::parse5(Encoding::convertString(cfg));
-        SWITCH_TRACE("readConfFile: JSON parse successful\n");
     }
     catch (const std::exception &e) {
-        printf("readConfFile: Exception: %s\n", e.what());
-        fflush(stdout);
         Debug() << "Failed to parse" << path << ":" << e.what();
     }
     catch (const Exception &e) {
-        printf("readConfFile: Exception (mkxp)\n");
-        fflush(stdout);
         Debug() << "Failed to parse" << path << ":" << "Unknown encoding";
     }
-    catch (...) {
-        printf("readConfFile: Unknown exception during parse\n");
-        fflush(stdout);
-    }
     
-    if (!ret.is_object()) {
-        printf("readConfFile: Result is not an object\n");
-        fflush(stdout);
+    if (!ret.is_object())
         ret = json::object({});
-    }
     
     return ret;
-    */
 }
 
 #define CONF_FILE "mkxp.json"

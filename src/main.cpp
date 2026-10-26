@@ -308,39 +308,6 @@ int main(int argc, char *argv[]) {
     /* now we load the config */
     Config conf;
 
-#ifdef __SWITCH__
-    SWITCH_TRACE("mkxp-z: SKIPPING Config::read() on Switch (temporary)\n");
-
-    // Minimal manual setup before we read Game.ini
-    conf.rgssVersion = 0;          // let readGameINI() guess from Scripts extension
-    conf.execName    = "Game";     // matches Game.exe / Game.ini basename on VX Ace
-    conf.dataPathOrg = ".";        // used by prefPath
-    conf.dataPathApp = "";         // will be filled from game.title in readGameINI
-
-    // No MiniFFI on Switch: provide Win32API in Ruby (see romfs-root/preload)
-    conf.preloadScripts.push_back("romfs:/preload/win32api_stub.rb");
-    conf.preloadScripts.push_back("romfs:/preload/win32_wrap.rb");
-    // No socket extension on Switch: offline stand-in for require 'socket'
-    conf.preloadScripts.push_back("romfs:/preload/socket_stub.rb");
-
-    try {
-        SWITCH_TRACE("mkxp-z: calling Config::readGameINI()\n");
-        conf.readGameINI();
-        SWITCH_TRACE("mkxp-z: readGameINI() finished, title='%s', rgssVersion=%d\n",
-               conf.game.title.c_str(), conf.rgssVersion);
-    } catch (const std::exception &e) {
-        printf("mkxp-z: EXCEPTION in readGameINI(): %s\n", e.what());
-        fflush(stdout);
-        showInitError(std::string("readGameINI failed: ") + e.what());
-        return 0;
-    } catch (...) {
-        printf("mkxp-z: UNKNOWN EXCEPTION in readGameINI()\n");
-        fflush(stdout);
-        showInitError("readGameINI failed: unknown exception");
-        return 0;
-    }
-
-#else
     try {
         conf.read(argc, argv);
     } catch (const std::exception &e) {
@@ -354,6 +321,15 @@ int main(int argc, char *argv[]) {
         showInitError("Config load failed: Unknown exception");
         return 0;
     }
+
+#ifdef __SWITCH__
+    // No MiniFFI or socket extension on Switch: Ruby stand-ins from RomFS
+    // (switch/romfs-root/preload) run before the game's own preload scripts.
+    conf.preloadScripts.insert(conf.preloadScripts.begin(), {
+        "romfs:/preload/win32api_stub.rb",
+        "romfs:/preload/win32_wrap.rb",
+        "romfs:/preload/socket_stub.rb",
+    });
 #endif
 
 #if defined(__WIN32__)
