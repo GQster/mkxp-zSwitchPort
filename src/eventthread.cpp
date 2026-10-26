@@ -509,7 +509,12 @@ void EventThread::process(RGSSThreadData &rtData)
                         break;
                         
                     case REQUEST_WINRESIZE :
+#ifndef __SWITCH__
+                        // On Switch the window is the whole display, and SDL
+                        // recreates the EGL surface on resize, which makes
+                        // Mesa fatalThrow (libnx AlreadyInitialized).
                         SDL_SetWindowSize(win, event.window.data1, event.window.data2);
+#endif
                         rtData.rqWindowAdjust.clear();
                         break;
                         
