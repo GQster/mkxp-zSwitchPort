@@ -654,9 +654,10 @@ void userAppInit(void) {
     // 1. Initialize ROMFS (read-only filesystem inside the NRO)
     romfsInit();
 
-    // 2. Setup logging to sdmc:/mkxpz_log.txt
-    setup_file_logging();
-    
+    // 2. Logging to sdmc:/mkxpz_log.txt is set up by main() via
+    //    switch_enable_logging(), after the game picker: the picker draws
+    //    on the libnx console, which needs stdout.
+
     // 3. Network Sockets - DISABLED to prevent crash
     // socketInitializeDefault(); 
     // nxlinkStdio();
@@ -686,7 +687,8 @@ switch_stub_sources = files(
   'switch_getrusage_stub.c',
   'switch_http_stub.cpp',
   'switch_posix_stubs.c',
-  'switch_main.cpp'
+  'switch_main.cpp',
+  'switch_gamepicker.cpp'
 )
 
 switch_inc = include_directories(

@@ -239,11 +239,18 @@ static void setupWindowIcon(const Config &conf, SDL_Window *win) {
 
 #ifdef __SWITCH__
 extern "C" void switch_enable_logging();
+extern "C" bool switch_pick_game(char *out, size_t outSize);
+extern "C" void switch_return_to_picker(const char *argv0);
 #endif
 
 int main(int argc, char *argv[]) {
 #ifdef __SWITCH__
+    // Pick the game before SDL takes over the display
+    char switchGameDir[512]{};
+    if (!switch_pick_game(switchGameDir, sizeof(switchGameDir)))
+        return 0;
     switch_enable_logging();
+    printf("mkxp-z: game folder '%s'\n", switchGameDir);
 #endif
     printf("mkxp-z: entering main()\n");
     fflush(stdout);
@@ -297,8 +304,7 @@ int main(int argc, char *argv[]) {
     if (!dataDir[0]) {
 
 #ifdef __SWITCH__
-    // TODO grant: make the selection on the switch at runtime
-    strncpy(dataDir, "sdmc:/switch/mkxp-z/Games", sizeof(dataDir));
+    strncpy(dataDir, switchGameDir, sizeof(dataDir));
     dataDir[sizeof(dataDir) - 1] = '\0';
 
 #else
@@ -660,6 +666,10 @@ int main(int argc, char *argv[]) {
     TTF_Quit();
     IMG_Quit();
     SDL_Quit();
+#ifdef __SWITCH__
+    switch_return_to_picker(argc > 0 ? argv[0] : NULL);
+#endif
+
     printf("mkxp-z: leaving main()\n");
     fflush(stdout);
     return 0;
