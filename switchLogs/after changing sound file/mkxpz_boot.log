@@ -1,0 +1,23 @@
+userAppInit: start
+userAppInit: romfsInit ok
+userAppInit: done (networking disabled)
+main: before switch_pick_game
+main: after switch_pick_game
+logging: stdout -> sdmc:/mkxpz_log.txt ok
+main: logging enabled
+main: before SDL_Init
+main: after SDL_Init
+main: after allocUserEvents
+main: before Config read
+main: after Config read
+main: after rgss version
+main: after IMG_Init
+main: after TTF_Init
+main: after Sound_Init
+main: before CreateWindow
+main: after CreateWindow
+main: after alcOpenDevice
+main: before initGL
+main: after initGL
+main: before RGSS thread
+main: RGSS thread started
