@@ -47,6 +47,7 @@ REQUIRED_LIBS=(
     "${LIBS}/physfs-switch/lib/libphysfs.a"
     "${LIBS}/SDL_sound-switch/lib/libSDL2_sound.a"
     "${LIBS}/fluidsynth-switch/lib/libfluidsynth.a"
+    "${LIBS}/pixman-switch/lib/libpixman-1.a"
 )
 
 for lib in "${REQUIRED_LIBS[@]}"; do

@@ -1341,7 +1341,9 @@ static void mriBindingExecute() {
     if (!NIL_P(exc) && !rb_obj_is_kind_of(exc, rb_eSystemExit))
         showExc(exc, btData);
     
+    SWITCH_TRACE("mriBindingExecute: before ruby_cleanup\n");
     ruby_cleanup(0);
+    SWITCH_TRACE("mriBindingExecute: after ruby_cleanup\n");
     
     shState->rtData().rqTermAck.set();
 }

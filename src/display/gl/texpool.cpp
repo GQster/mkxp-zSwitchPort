@@ -23,6 +23,7 @@
 #include "exception.h"
 #include "sharedstate.h"
 #include "glstate.h"
+#include "switch-trace.h"
 #include "boost-hash.h"
 #include "debugwriter.h"
 
@@ -86,6 +87,7 @@ TexPool::TexPool(uint32_t maxMemSize)
 
 TexPool::~TexPool()
 {
+	SWITCH_TRACE("TexPool::dtor: begin (count=%d)\n", p->objCount);
 	std::list<TEXFBO>::iterator iter;
 
 	for (iter = p->priorityQueue.begin();
@@ -100,6 +102,7 @@ TexPool::~TexPool()
 	assert(p->objCount == 0);
 
 	delete p;
+	SWITCH_TRACE("TexPool::dtor: end\n");
 }
 
 TEXFBO TexPool::request(int width, int height)

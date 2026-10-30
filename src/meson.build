@@ -84,10 +84,13 @@ if host_system == 'switch'
         link_args: switch_link_args + ['-lfreetype']
     )
     
-    # Pixman
+    # Pixman (rebuilt locally with -fPIE, see configure_mkxpz.sh).
+    # devkitPro's prebuilt libpixman-1.a has the same soft-TLS miscompile as
+    # the old FluidSynth archive (`lsl tp, #1` in
+    # _pixman_implementation_lookup_composite), so link our archive instead.
     pixman = declare_dependency(
         include_directories: switch_inc,
-        link_args: switch_link_args + ['-lpixman-1']
+        link_args: switch_link_args + [join_paths(meson.project_source_root(), 'libs/pixman-switch/lib/libpixman-1.a')]
     )
     
     # PNG

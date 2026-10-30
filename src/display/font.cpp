@@ -27,6 +27,7 @@
 #include "boost-hash.h"
 #include "util.h"
 #include "config.h"
+#include "switch-trace.h"
 
 #include "debugwriter.h"
 
@@ -133,11 +134,13 @@ SharedFontState::SharedFontState(const Config &conf)
 
 SharedFontState::~SharedFontState()
 {
+	SWITCH_TRACE("SharedFontState::dtor: begin\n");
 	BoostHash<FontKey, TTF_Font*>::const_iterator iter;
 	for (iter = p->pool.cbegin(); iter != p->pool.cend(); ++iter)
 		TTF_CloseFont(iter->second);
 
 	delete p;
+	SWITCH_TRACE("SharedFontState::dtor: end\n");
 }
 
 void SharedFontState::initFontSetCB(SDL_RWops &ops,

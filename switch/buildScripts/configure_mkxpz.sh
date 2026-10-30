@@ -307,6 +307,14 @@ for opt in alsa aufile dbus ipv6 jack ladspa libinstpatch libsndfile midishare n
 done
 
 # fluidsynth_switch_compat.h stubs pthread_setschedparam (missing in newlib)
+#
+# FluidSynth must be built with -fPIE, not -fPIC: devkitA64's -mtp=soft TLS
+# codegen is broken in PIC mode (GCC emits `lsl tp, #1` instead of `tp+off`),
+# so the thread_local in fluid_sys_cpp11.cpp would fault on synth teardown
+# (2168-0002 0x4A8 in fluid_private_free). -fPIE produces correct code and is
+# what mkxp-z itself uses.
+FLUID_CFLAGS="${CFLAGS//-fPIC/-fPIE}"
+FLUID_CXXFLAGS="${CXXFLAGS//-fPIC/-fPIE}"
 cmake -S "${FLUID_SRC}" -B "${FLUID_BUILD}" \
     -DCMAKE_SYSTEM_NAME=Generic \
     -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
@@ -321,8 +329,8 @@ cmake -S "${FLUID_SRC}" -B "${FLUID_BUILD}" \
     -Denable-threads=ON \
     ${FLUID_OFF} \
     -DCMAKE_INSTALL_PREFIX="${FLUID_PREFIX}" \
-    -DCMAKE_C_FLAGS="${CFLAGS} -include ${TOPDIR}/switch/deps/fluidsynth_switch_compat.h" \
-    -DCMAKE_CXX_FLAGS="${CXXFLAGS}"
+    -DCMAKE_C_FLAGS="${FLUID_CFLAGS} -include ${TOPDIR}/switch/deps/fluidsynth_switch_compat.h" \
+    -DCMAKE_CXX_FLAGS="${FLUID_CXXFLAGS}"
 
 make -C "${FLUID_BUILD}" -j"$(nproc)" libfluidsynth
 
@@ -336,8 +344,49 @@ cp "${FLUID_BUILD}/include/fluidsynth.h" "${FLUID_PREFIX}/include/"
 cp "${FLUID_SRC}"/include/fluidsynth/*.h "${FLUID_BUILD}/include/fluidsynth/version.h" \
    "${FLUID_PREFIX}/include/fluidsynth/"
 
+# ────────────────────────────────────────────────────────────
+# 4. Build Pixman (software rasterizer; rebuilt to fix soft-TLS codegen)
+# ────────────────────────────────────────────────────────────
+# devkitPro's prebuilt libpixman-1.a was compiled with -fPIC but without
+# -ftls-model=local-exec. devkitA64 then miscompiles thread-local accesses as
+# `lsl tp, #1` instead of `tp + offset`; the linked binary had 11 such sites in
+# _pixman_implementation_lookup_composite. mkxp-z only uses pixman's region
+# functions today, but shipping broken TLS code is a latent data-abort. Rebuild
+# 0.42.2 from source with the same -fPIE policy as mkxp-z and FluidSynth.
+echo ">>> Building Pixman for Switch..."
+PIXMAN_VERSION=0.42.2
+PIXMAN_SHA256=ea1480efada2fd948bc75366f7c349e1c96d3297d09a3fe62626e38e234a625e
+PIXMAN_TARBALL=/tmp/pixman-${PIXMAN_VERSION}.tar.gz
+PIXMAN_SRC="${LIBS_DIR}/pixman-src"
+PIXMAN_BUILD="${LIBS_DIR}/pixman-build"
+PIXMAN_PREFIX="${LIBS_DIR}/pixman-switch"
+if [ ! -f "${PIXMAN_SRC}/meson.build" ]; then
+    curl -fL --retry 3 -o "${PIXMAN_TARBALL}" \
+        "https://cairographics.org/releases/pixman-${PIXMAN_VERSION}.tar.gz"
+    echo "${PIXMAN_SHA256}  ${PIXMAN_TARBALL}" | sha256sum -c -
+    rm -rf "${PIXMAN_SRC}"
+    mkdir -p "${PIXMAN_SRC}"
+    tar xf "${PIXMAN_TARBALL}" -C "${PIXMAN_SRC}" --strip-components=1
+fi
+rm -rf "${PIXMAN_BUILD}" "${PIXMAN_PREFIX}"
+/opt/devkitpro/meson-toolchain.sh switch > /tmp/pixman-cross.txt
+sed -i 's/-fPIC/-fPIE/g' /tmp/pixman-cross.txt
+meson setup "${PIXMAN_BUILD}" "${PIXMAN_SRC}" \
+    --cross-file=/tmp/pixman-cross.txt \
+    --buildtype=release \
+    --default-library=static \
+    --prefix="${PIXMAN_PREFIX}" \
+    --libdir=lib \
+    -Dtests=disabled \
+    -Dgtk=disabled \
+    -Dopenmp=disabled \
+    -Dlibpng=disabled
+ninja -C "${PIXMAN_BUILD}"
+ninja -C "${PIXMAN_BUILD}" install
+
 echo
 echo "✅ Dependency build complete!"
 echo "→ PhysicsFS:  ${LIBS_DIR}/physfs-switch/lib/libphysfs.a"
 echo "→ SDL_sound:  ${LIBS_DIR}/SDL_sound-switch/lib/libSDL2_sound.a"
 echo "→ FluidSynth: ${FLUID_PREFIX}/lib/libfluidsynth.a"
+echo "→ Pixman:     ${PIXMAN_PREFIX}/lib/libpixman-1.a"

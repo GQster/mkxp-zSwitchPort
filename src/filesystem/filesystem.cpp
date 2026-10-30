@@ -344,10 +344,13 @@ FileSystem::FileSystem(const char *argv0, bool allowSymlinks) {
 }
 
 FileSystem::~FileSystem() {
+  SWITCH_TRACE("FileSystem::dtor: begin\n");
   delete p;
 
+  SWITCH_TRACE("FileSystem::dtor: before PHYSFS_deinit\n");
   if (PHYSFS_deinit() == 0)
     Debug() << "PhyFS failed to deinit.";
+  SWITCH_TRACE("FileSystem::dtor: end\n");
 }
 
 void FileSystem::addPath(const char *path, const char *mountpoint, bool reload) {

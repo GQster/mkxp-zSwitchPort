@@ -217,9 +217,12 @@ struct SharedStatePrivate
 
 	~SharedStatePrivate()
 	{
+		SWITCH_TRACE("SharedStatePrivate::dtor: begin\n");
 		TEX::del(globalTex);
+		SWITCH_TRACE("SharedStatePrivate::dtor: after globalTex delete\n");
 		TEXFBO::fini(gpTexFBO);
 		TEXFBO::fini(atlasTex);
+		SWITCH_TRACE("SharedStatePrivate::dtor: end of body (members next)\n");
 	}
 };
 
@@ -274,11 +277,16 @@ void SharedState::initInstance(RGSSThreadData *threadData)
 
 void SharedState::finiInstance()
 {
+	SWITCH_TRACE("finiInstance: before defaultFont delete\n");
 	delete SharedState::instance->p->defaultFont;
 
+	SWITCH_TRACE("finiInstance: after defaultFont delete, before instance delete\n");
 	delete SharedState::instance;
 
+	SWITCH_TRACE("finiInstance: after instance delete, before globalIBO delete\n");
 	delete _globalIBO;
+
+	SWITCH_TRACE("finiInstance: done\n");
 }
 
 void SharedState::setScreen(Scene &screen)

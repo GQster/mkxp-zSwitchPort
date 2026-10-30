@@ -892,6 +892,7 @@ struct GraphicsPrivate {
         TEXFBO::fini(integerScaleBuffer);
         SDL_DestroyMutex(avgFPSLock);
         SDL_DestroyMutex(glResourceLock);
+        SWITCH_TRACE("GraphicsPrivate::dtor: end\n");
     }
     
     void updateScreenResoRatio(RGSSThreadData *rtData) {

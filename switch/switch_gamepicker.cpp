@@ -183,13 +183,16 @@ void showMessage(PadState &pad, const char *msg) {
 
 // Writes the chosen game directory to out. Returns false if the user quit.
 extern "C" bool switch_pick_game(char *out, size_t outSize) {
-    // Old layout: the game itself sits in GAMES_ROOT
-    if (!findGameIni(GAMES_ROOT).empty()) {
+    std::vector<GameEntry> games = scanGames();
+
+    // Old layout: the game itself sits directly in GAMES_ROOT. Only fall back
+    // to it when no per-game subfolders exist; otherwise a stray Games/Game.ini
+    // would make the picker unreachable (TODO #1).
+    if (games.empty() && !findGameIni(GAMES_ROOT).empty()) {
         snprintf(out, outSize, "%s", GAMES_ROOT);
         return true;
     }
 
-    std::vector<GameEntry> games = scanGames();
     if (games.size() == 1) {
         snprintf(out, outSize, GAMES_ROOT "/%s", games[0].folder.c_str());
         return true;

@@ -92,10 +92,14 @@ struct AudioPrivate
 
 	~AudioPrivate()
 	{
+		SWITCH_TRACE("AudioPrivate::dtor: begin\n");
 		meWatch.termReq.set();
+		SWITCH_TRACE("AudioPrivate::dtor: joining midi watch thread\n");
 		SDL_WaitThread(meWatch.thread, 0);
+		SWITCH_TRACE("AudioPrivate::dtor: midi watch thread joined\n");
         for (auto track : bgmTracks)
             delete track;
+		SWITCH_TRACE("AudioPrivate::dtor: end\n");
 	}
     
     AudioStream *getTrackByIndex(int index) {

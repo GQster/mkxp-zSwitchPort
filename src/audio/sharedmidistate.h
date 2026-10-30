@@ -58,6 +58,7 @@ struct SharedMidiState
 
 	~SharedMidiState()
 	{
+		SWITCH_TRACE("SharedMidiState::dtor: begin (inited=%d)\n", inited);
 		/* We might have initialized, but if the consecutive libfluidsynth
 		 * load failed, no resources will have been allocated */
 		if (!inited || !HAVE_FLUID)
@@ -70,6 +71,7 @@ struct SharedMidiState
 		}
 
 		fluid.delete_settings(flSettings);
+		SWITCH_TRACE("SharedMidiState::dtor: end\n");
 	}
 
 	void initIfNeeded(const Config &conf)

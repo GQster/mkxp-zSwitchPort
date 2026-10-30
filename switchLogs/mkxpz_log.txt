@@ -1,0 +1,84 @@
+--- MKXP-Z Switch Log Start --- (debug tracing on)
+mkxp-z: game folder 'sdmc:/switch/mkxp-z/Games/FireAsh'
+mkxp-z: entering main()
+Arg 0: sdmc:/switch/mkxp-z.nro
+mkxp-z: before SDL_Init
+mkxp-z: after SDL_Init
+mkxp-z: after EventThread::allocUserEvents
+RGSS version 1 (RPG Maker XP) 
+mkxp-z: before IMG_Init
+mkxp-z: after IMG_Init
+mkxp-z: after TTF_Init
+mkxp-z: before SDL_CreateWindow
+mkxp-z: after SDL_CreateWindow
+mkxp-z: after alcOpenDevice
+mkxp-z: before SDL_CreateThread (RGSS)
+mkxp-z: after SDL_CreateThread, before eventThread.process
+Backend      : GLES ALC_SOFT_pause_device present 
+
+GL Vendor    :  nouveau 
+GL Renderer  :  NV120 
+GL Version   :  OpenGL ES 3.2 Mesa 20.1.0-rc3 
+RGSS thread: GL init done
+RGSS thread: OpenAL context created
+RGSS thread: before SharedState::initInstance
+SharedState::initInstance: entered (rgssVersion=1)
+SharedState::initInstance: before new SharedState
+SharedState::SharedState: ctor begin
+PHYSFS_init: enter, argv0=mkxp-z
+PHYSFS_init: before platformInit
+PHYSFS_init: calling initializeMutexes
+Mutex: creating...
+Mutex: creating...
+PHYSFS_init: before calculateBaseDir
+PHYSFS_init: baseDir=./
+FileSystem::FileSystem: after registerArchiver, er=1
+FileSystem::FileSystem: exit
+SharedMidiState::ctor: soundFont='soundfont.sf2'
+GraphicsPrivate::ctor: begin
+GraphicsPrivate::ctor: end
+Input::Input: enter
+Input::Input: exit
+ALStream::ctor: enter (threadId=bgs)
+ALStream::ctor: after Source::gen
+ALStream::ctor: after Source setup
+ALStream::ctor: after Buffer::gen
+ALStream::ctor: exit
+ALStream::ctor: enter (threadId=me)
+ALStream::ctor: after Source::gen
+ALStream::ctor: after Source setup
+ALStream::ctor: after Buffer::gen
+ALStream::ctor: exit
+SoundEmitter::ctor: enter, srcCount=6
+SoundEmitter::ctor: exit
+AudioPrivate::ctor: enter
+ALStream::ctor: enter (threadId=bgm0)
+ALStream::ctor: after Source::gen
+ALStream::ctor: after Source setup
+ALStream::ctor: after Buffer::gen
+ALStream::ctor: exit
+AudioPrivate::ctor: after bgmTracks
+AudioPrivate::ctor: before createSDLThread
+AudioPrivate::ctor: exit
+Audio::Audio: ctor complete
+SharedStatePrivate::ctor: begin
+  threadData=0x46180b6aa0, window=0x366c940460
+SharedStatePrivate::ctor: end
+SharedState::SharedState: after new SharedStatePrivate
+SharedState::SharedState: before p->init
+SharedStatePrivate::init: enter
+SharedStatePrivate::init: after ReleaseShaderCompiler
+SharedStatePrivate::init: archPath='Game.rgssad'
+SharedStatePrivate::init: fopen('Game.rgssad') -> 0x0
+SharedStatePrivate::init: addPath('.')
+SharedStatePrivate::init: before pathCache check (pathCache=1)
+SharedStatePrivate::init: before createPathCache
+Loading path cache... 
+Path cache completed. 
+SharedStatePrivate::init: after createPathCache
+SharedStatePrivate::init: before initFontSets
+SharedStatePrivate::init: after initFontSets
+SharedStatePrivate::init: before TEX::gen
+SharedStatePrivate::init: after TEX setup
+SharedStatePrivate::init: after gpTexFBO setup
+SharedStatePrivate::init: before midiState.initIfNeeded
