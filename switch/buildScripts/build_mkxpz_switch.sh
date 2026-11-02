@@ -159,7 +159,7 @@ printf " ⏱  Total build time: %02d:%02d:%02d\n" "$ELAPSED_H" "$ELAPSED_M" "$EL
 
 echo ""
 echo "Next steps:"
-echo "  1. Copy ${BUILD}/mkxp-z.nro to the SD card as /switch/mkxp-z/mkxp-z.nro"
+echo "  1. Copy ${BUILD}/mkxp-z.nro to the SD card as /switch/mkxp-z.nro"
 echo "  2. Put each game in /switch/mkxp-z/Games/<Game Name>/ (with its Game.ini)"
 echo ""
 echo "════════════════════════════════════════════════════════════"

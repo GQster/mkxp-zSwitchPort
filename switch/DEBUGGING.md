@@ -92,39 +92,6 @@ Homebrew Menu by holding R while starting any game instead.
 With `debug.txt` present, `mkxpz_log.txt` gets far more detail, and
 `mkxpz_mem.log` is written as well.
 
-### Startup steps (`mkxpz_log.txt`)
-
-Every engine startup stage is logged, so if the game hangs or crashes before
-the title screen, the last line shows where:
-
-```
-SharedStatePrivate::init: before createPathCache
-Loading path cache...
-Path cache completed: 21194 files in 1143 ms
-...
-mriBindingExecute: after ruby_init
-startup: 397 scripts read and decompressed in 86 ms
-startup: script 170:Move_Effects_080-0FF took 54 ms
-startup: 396 script sections ran in 2018 ms, starting 396:Main
-```
-
-- **Path cache:** the engine's index of the game folder, which lets it find
-  files whatever their capitalisation. It should take about a second, even
-  for 20,000 files.
-- **`startup:` lines:** how long reading the game's scripts took, every
-  script section that took 50 ms or longer, and the total before the game's
-  `Main` script starts. After `Main` starts, the game's own loading (plugins,
-  data files) shows up as the first slow frame (see below).
-
-### Audio (`mkxpz_log.txt`)
-
-Every sound the game plays is logged with a Unix timestamp. Use the
-timestamps to line up what happened when:
-
-```
-[audio] 1744676007.271 se 'Audio/SE/GUI menu open' vol=5 pitch=100
-```
-
 OpenAL also logs its setup and any warnings (lines starting with `[ALSOFT]`),
 such as buffer underruns.
 
@@ -237,10 +204,7 @@ with its backtrace.
 | What | Where |
 |---|---|
 | Flag files, boot log, launch info, memory log, CPU boost, OpenAL debug | `switch/switch_main.cpp` |
-| `SWITCH_TRACE` macro, used for the startup trace | `src/util/switch-trace.h` |
+| `SWITCH_TRACE` macro, for tracing in `switch/` | `switch/switch-trace.h` |
 | Frame counter for `mkxpz_mem.log` | `EventThread::notifyFrame` in `src/eventthread.cpp` |
-| `[audio]` lines | `TRACE_PLAY` in `src/audio/audio.cpp` |
-| Path cache timing | `FileSystem::createPathCache` in `src/filesystem/filesystem.cpp` |
-| Script startup timing | `runRMXPScripts` in `binding/binding-mri.cpp` |
 | Slow-frame tracer | `switch/romfs-root/preload/perf_trace.rb` |
 | Unbuffered Ruby output, so Ruby's output appears in the log immediately | `switch/romfs-root/preload/log_sync.rb` |
