@@ -247,6 +247,12 @@ static const char *findExt(const char *filename) {
 }
 
 static void initReadOps(PHYSFS_File *handle, SDL_RWops &ops, bool freeOnClose) {
+#ifdef __SWITCH__
+  /* Unbuffered, every read is a filesystem service call. SDL_sound's Ogg
+   * decoder (stb_vorbis) reads one byte at a time, which made loading even
+   * a short sound effect block the game for one to two seconds. */
+  PHYSFS_setBuffer(handle, 64 * 1024);
+#endif
   ops.size = SDL_RWopsSize;
   ops.seek = SDL_RWopsSeek;
   ops.read = SDL_RWopsRead;
