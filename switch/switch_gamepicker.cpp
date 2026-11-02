@@ -36,6 +36,17 @@ struct GameEntry {
     std::string title;
 };
 
+// The game's directory; folder "" is a game sitting directly in GAMES_ROOT
+std::string gamePath(const std::string &folder) {
+    return folder.empty() ? std::string(GAMES_ROOT) : GAMES_ROOT "/" + folder;
+}
+
+std::string displayName(const GameEntry &g) {
+    if (!g.folder.empty())
+        return g.folder;
+    return g.title.empty() ? "Game" : g.title;
+}
+
 bool isFile(const std::string &path) {
     struct stat st;
     return stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode);
@@ -154,8 +165,8 @@ void drawMenu(const std::vector<GameEntry> &games, int sel, int top) {
     for (int row = 0; row < LIST_ROWS && top + row < (int)games.size(); ++row) {
         const GameEntry &g = games[top + row];
         bool cur = (top + row == sel);
-        std::string label = g.folder;
-        if (!g.title.empty() && g.title != g.folder)
+        std::string label = displayName(g);
+        if (!g.title.empty() && g.title != label)
             label += "  (" + g.title + ")";
         if (label.size() > 74)
             label.resize(74);
@@ -185,17 +196,14 @@ void showMessage(PadState &pad, const char *msg) {
 extern "C" bool switch_pick_game(char *out, size_t outSize) {
     std::vector<GameEntry> games = scanGames();
 
-    // Old layout: the game itself sits directly in GAMES_ROOT. Only fall back
-    // to it when no per-game subfolders exist; otherwise a stray Games/Game.ini
-    // would make the picker unreachable (TODO #1).
-    if (games.empty() && !findGameIni(GAMES_ROOT).empty()) {
-        snprintf(out, outSize, "%s", GAMES_ROOT);
-        return true;
-    }
-
-    if (games.size() == 1) {
-        snprintf(out, outSize, GAMES_ROOT "/%s", games[0].folder.c_str());
-        return true;
+    // Old layout: the game itself sits directly in GAMES_ROOT. It's listed
+    // (folder "") only when no per-game subfolders exist; otherwise a stray
+    // Games/Game.ini would hide the real games (TODO #1). The picker is shown
+    // even for a single game, so Settings stays reachable.
+    if (games.empty()) {
+        std::string rootIni = findGameIni(GAMES_ROOT);
+        if (!rootIni.empty())
+            games.push_back({"", readTitle(rootIni)});
     }
 
     menuShown = true;
@@ -208,13 +216,13 @@ extern "C" bool switch_pick_game(char *out, size_t outSize) {
     if (!games.empty()) {
         std::vector<PickerGame> uiGames;
         for (const GameEntry &g : games)
-            uiGames.push_back({GAMES_ROOT "/" + g.folder, g.folder});
+            uiGames.push_back({gamePath(g.folder), displayName(g)});
         PickerResult r = pickerUiRun(uiGames, sel);
         if (r == PICKER_QUIT)
             return false;
         if (r == PICKER_PICKED) {
             recordPlayed(games[sel].folder);
-            snprintf(out, outSize, GAMES_ROOT "/%s", games[sel].folder.c_str());
+            snprintf(out, outSize, "%s", gamePath(games[sel].folder).c_str());
             return true;
         }
     }
@@ -266,7 +274,7 @@ extern "C" bool switch_pick_game(char *out, size_t outSize) {
         return false;
 
     recordPlayed(games[sel].folder);
-    snprintf(out, outSize, GAMES_ROOT "/%s", games[sel].folder.c_str());
+    snprintf(out, outSize, "%s", gamePath(games[sel].folder).c_str());
     return true;
 }
 
