@@ -68,9 +68,13 @@ extern "C" {
 #include <SDL_power.h>
 #include <SDL_timer.h>
 
+#include "git-hash.h"
+
 extern const char module_rpg1[];
 extern const char module_rpg2[];
 extern const char module_rpg3[];
+
+static VALUE topSelf;
 
 static void mriBindingExecute();
 static void mriBindingTerminate();
@@ -122,11 +126,13 @@ RB_METHOD(mkxpPlatform);
 RB_METHOD(mkxpIsMacHost);
 RB_METHOD(mkxpIsWindowsHost);
 RB_METHOD(mkxpIsLinuxHost);
+RB_METHOD(mkxpIsBSDHost);
 RB_METHOD(mkxpIsUsingRosetta);
 RB_METHOD(mkxpIsUsingWine);
 RB_METHOD(mkxpIsReallyMacHost);
 RB_METHOD(mkxpIsReallyLinuxHost);
 RB_METHOD(mkxpIsReallyWindowsHost);
+RB_METHOD(mkxpIsReallyBSDHost);
 
 RB_METHOD(mkxpUserLanguage);
 RB_METHOD(mkxpUserName);
@@ -232,14 +238,14 @@ static void mriBindingInit() {
     
     _rb_define_module_function(mod, "is_mac?", mkxpIsMacHost);
     _rb_define_module_function(mod, "is_rosetta?", mkxpIsUsingRosetta);
-    
     _rb_define_module_function(mod, "is_linux?", mkxpIsLinuxHost);
-    
     _rb_define_module_function(mod, "is_windows?", mkxpIsWindowsHost);
     _rb_define_module_function(mod, "is_wine?", mkxpIsUsingWine);
+    _rb_define_module_function(mod, "is_bsd?", mkxpIsBSDHost);
     _rb_define_module_function(mod, "is_really_mac?", mkxpIsReallyMacHost);
     _rb_define_module_function(mod, "is_really_linux?", mkxpIsReallyLinuxHost);
     _rb_define_module_function(mod, "is_really_windows?", mkxpIsReallyWindowsHost);
+    _rb_define_module_function(mod, "is_really_bsd?", mkxpIsReallyBSDHost);
     
     
     _rb_define_module_function(mod, "user_language", mkxpUserLanguage);
@@ -277,12 +283,7 @@ static void mriBindingInit() {
     
     rb_gv_set("BTEST", rb_bool_new(shState->config().editor.battleTest));
     
-#ifdef MKXPZ_BUILD_XCODE
-    std::string version = std::string(MKXPZ_VERSION "/") + getPlistValue("GIT_COMMIT_HASH");
-    VALUE vers = rb_utf8_str_new_cstr(version.c_str());
-#else
     VALUE vers = rb_utf8_str_new_cstr(MKXPZ_VERSION "/" MKXPZ_GIT_HASH);
-#endif
     rb_str_freeze(vers);
     rb_define_const(mod, "VERSION", vers);
     
@@ -465,6 +466,11 @@ RB_METHOD(mkxpIsUsingWine) {
     return rb_bool_new(mkxp_sys::isWine());
 }
 
+RB_METHOD(mkxpIsBSDHost) {
+    RB_UNUSED_PARAM;
+    return rb_bool_new(MKXPZ_PLATFORM == MKXPZ_PLATFORM_BSD);
+}
+
 RB_METHOD(mkxpIsReallyMacHost) {
     RB_UNUSED_PARAM;
     return rb_bool_new(mkxp_sys::getRealHostType() == mkxp_sys::WineHostType::Mac);
@@ -478,6 +484,11 @@ RB_METHOD(mkxpIsReallyLinuxHost) {
 RB_METHOD(mkxpIsReallyWindowsHost) {
     RB_UNUSED_PARAM;
     return rb_bool_new(mkxp_sys::getRealHostType() == mkxp_sys::WineHostType::Windows);
+}
+
+RB_METHOD(mkxpIsReallyBSDHost) {
+    RB_UNUSED_PARAM;
+    return rb_bool_new(mkxp_sys::getRealHostType() == mkxp_sys::WineHostType::Bsd);
 }
 
 RB_METHOD(mkxpUserLanguage) {
@@ -649,11 +660,11 @@ RB_METHOD_GUARD_END
 #ifdef __APPLE__
 #define OPENCMD "open "
 #define OPENARGS "--args"
-#elif defined(__linux__)
-#define OPENCMD "xdg-open "
+#elif defined(_WIN32)
+#define OPENCMD "start /b \"launch\" "
 #define OPENARGS ""
 #else
-#define OPENCMD "start /b \"launch\" "
+#define OPENCMD "xdg-open "
 #define OPENARGS ""
 #endif
 
@@ -669,7 +680,7 @@ RB_METHOD_GUARD(mkxpLaunch) {
     command += "\""; command += RSTRING_PTR(cmdname); command += "\"";
     
     if (args != RUBY_Qnil) {
-#ifndef __linux__
+#if defined(__APPLE__) || defined(_WIN32)
         command += " ";
         command += OPENARGS;
         Check_Type(args, T_ARRAY);
@@ -847,7 +858,7 @@ static VALUE evalHelper(evalArg *arg) {
     // Ruby 3.2, so their top-level defs are private and calls like
     // Kernel.pbShowCommands (Pokemon Essentials) raise NoMethodError; they
     // work under the Ruby 3.0 that Windows mkxp-z games ship with. Start every
-    // script in public scope. (self is nil here, hence Object.__send__.) The
+    // script in public scope. (self may be nil, hence Object.__send__.) The
     // extra line is offset by passing line 0, so line numbers are unchanged.
     // A UTF-8 BOM is only skipped at the very start of the source, so drop it
     // here rather than leave it at the start of line 2.
@@ -856,7 +867,7 @@ static VALUE evalHelper(evalArg *arg) {
         body = rb_str_subseq(body, 3, RSTRING_LEN(body) - 3); // bytes
     VALUE src = rb_str_plus(rb_str_new_cstr("Object.__send__(:public)\n"), body);
     VALUE argv[] = {src, Qnil, arg->filename, INT2FIX(0)};
-    return rb_funcall2(Qnil, rb_intern("eval"), ARRAY_SIZE(argv), argv);
+    return rb_funcall2(topSelf, rb_intern("eval"), ARRAY_SIZE(argv), argv);
 }
 
 static VALUE evalString(VALUE string, VALUE filename, int *state) {
@@ -1313,6 +1324,8 @@ static void mriBindingExecute() {
 #endif
 #endif
     
+    topSelf = rgssVer == 1 ? Qnil : rb_eval_string("self");
+    
     VALUE rbArgv = rb_get_argv();
     for (const auto &str : conf.launchArgs)
         rb_ary_push(rbArgv, rb_utf8_str_new_cstr(str.c_str()));
@@ -1322,12 +1335,6 @@ static void mriBindingExecute() {
     
     VALUE lpaths = rb_gv_get(":");
     rb_ary_clear(lpaths);
-    
-#if defined(MKXPZ_BUILD_XCODE) && RAPI_MAJOR >= 2
-    std::string resPath = mkxp_fs::getResourcePath();
-    resPath += "/Ruby/" + std::to_string(RAPI_MAJOR) + "." + std::to_string(RAPI_MINOR) + ".0";
-    rb_ary_push(lpaths, rb_str_new(resPath.c_str(), resPath.size()));
-#endif
     
     if (!conf.rubyLoadpaths.empty()) {
         /* Setup custom load paths */

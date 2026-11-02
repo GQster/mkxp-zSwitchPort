@@ -12,6 +12,7 @@ xxd+
 
 /build
 /builddir
+/ccache
 
 # VS Code
 /.vscode
@@ -80,55 +81,6 @@ DerivedData/
 
 ## Gcc Patch
 /*.gcno
-
-
-# ────────────────────────────────
-# 🧱 Build Output Directories
-# ────────────────────────────────
-# Meson / CMake build dirs
-build-*/
-**/build-*/
-build/
-build-switch/
-build-linux/
-meson.build
-
-# External project builds
-physfs-build/
-SDL_sound-build/
-ruby-3.2.2/
-
-# Any CMake intermediate files
-CMakeFiles/
-CMakeCache.txt
-Makefile
-cmake_install.cmake
-install_manifest.txt
-
-# ────────────────────────────────
-# 📦 Downloaded / Generated Archives
-# ────────────────────────────────
-ruby-*.tar.gz*
-physfs-*.tar.gz*
-SDL_sound-*.tar.gz*
-*.zip
-*.tar
-
-# ────────────────────────────────
-# 🎧 External Source Trees
-# ────────────────────────────────
-physfs-src/
-SDL_sound-src/
-
-# ────────────────────────────────
-# 🧠 General
-# ────────────────────────────────
-*.swp
-*.swo
-*.log
-*.tmp
-*.bak
-*.DS_Store
 
 # ────────────────────────────────
 # 🧱 Build Output Directories
@@ -216,17 +168,6 @@ compile_commands.json
 Thumbs.db
 ehthumbs.db
 desktop.ini
-
-
-
-
-
-
-
-
-
-
-
 
 # Notes
 # /switch/notes/*

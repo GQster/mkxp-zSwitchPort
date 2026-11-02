@@ -128,7 +128,7 @@ Config::Config()
     : rgssVersion(0),
       debugMode(false),
       winConsole(false),
-      preferMetalRenderer(false),
+      renderer(0),
       displayFPS(false),
       printFPS(false),
       winResizable(true),
@@ -140,7 +140,7 @@ Config::Config()
       bitmapSmoothScalingDown(0),
       smoothScalingMipmaps(false),
       bicubicSharpness(100),
-#ifdef MKXPZ_SSL
+#ifdef MKXPZ_HAVE_EXTRA_SHADERS
       xbrzScalingFactor(1.0),
 #endif
       enableHires(false),
@@ -202,7 +202,7 @@ void Config::read(int argc, char *argv[]) {
         {"bitmapSmoothScalingDown", 0},
         {"smoothScalingMipmaps", false},
         {"bicubicSharpness", 100},
-#ifdef MKXPZ_SSL
+#ifdef MKXPZ_HAVE_EXTRA_SHADERS
         {"xbrzScalingFactor", 1.},
 #endif
         {"enableHires", false},
@@ -217,11 +217,7 @@ void Config::read(int argc, char *argv[]) {
         {"frameSkip", false},
         {"syncToRefreshrate", false},
         {"solidFonts", json::array({})},
-#if defined(__APPLE__) && defined(__aarch64__)
-        {"preferMetalRenderer", true},
-#else
-        {"preferMetalRenderer", false},
-#endif
+        {"renderer", 0},
         {"subImageFix", false},
 #ifdef __WIN32__
         {"enableBlitting", false},
@@ -253,6 +249,11 @@ void Config::read(int argc, char *argv[]) {
         {"RTP", json::array({})},
         {"patches", json::array({})},
         {"fontSub", json::array({})},
+        {"fontScale", 0.0f},
+        {"fontKerning", true},
+        {"fontHinting", 3}, // TTF_HINTING_NONE
+        {"fontHeightReporting", 0},
+        {"fontOutlineCrop", true},
         {"rubyLoadpath", json::array({})},
         {"JITEnable", false},
         {"JITVerboseLevel", 0},
@@ -341,7 +342,7 @@ try { exp } catch (...) {}
     SET_OPT(bitmapSmoothScalingDown, integer);
     SET_OPT(smoothScalingMipmaps, boolean);
     SET_OPT(bicubicSharpness, integer);
-#ifdef MKXPZ_SSL
+#ifdef MKXPZ_HAVE_EXTRA_SHADERS
     SET_OPT(xbrzScalingFactor, integer);
 #endif
     SET_OPT(enableHires, boolean);
@@ -358,9 +359,7 @@ try { exp } catch (...) {}
     for (std::string & solidFont : solidFonts)
         std::transform(solidFont.begin(), solidFont.end(), solidFont.begin(),
             [](unsigned char c) { return std::tolower(c); });
-#ifdef __APPLE__
-    SET_OPT(preferMetalRenderer, boolean);
-#endif
+    SET_OPT(renderer, integer);
     SET_OPT(subImageFix, boolean);
     SET_OPT(enableBlitting, boolean);
     SET_OPT_CUSTOMKEY(integerScaling.active, integerScalingActive, boolean);
@@ -386,6 +385,11 @@ try { exp } catch (...) {}
     for (std::string & fontSub : fontSubs)
         std::transform(fontSub.begin(), fontSub.end(), fontSub.begin(),
             [](unsigned char c) { return std::tolower(c); });
+    SET_OPT(fontScale, number);
+    SET_OPT(fontKerning, boolean);
+    SET_OPT(fontHinting, integer);
+    SET_OPT(fontHeightReporting, integer);
+    SET_OPT(fontOutlineCrop, boolean);
     fillStringVec(opts["rubyLoadpath"], rubyLoadpaths);
     
     auto &bnames = opts["bindingNames"].as_object();
@@ -406,12 +410,6 @@ try { exp } catch (...) {}
     
     // Determine whether to open a console window on... Windows
     winConsole = getEnvironmentBool("MKXPZ_WINDOWS_CONSOLE", editor.debug);
-    
-#ifdef __APPLE__
-    // Determine whether to use the Metal renderer on macOS
-    // Environment variable takes priority over the json setting
-    preferMetalRenderer = isMetalSupported() && getEnvironmentBool("MKXPZ_MACOS_METAL", preferMetalRenderer);
-#endif
     
     // Determine whether to allow manual selection of a game folder on startup
     // Only works on macOS atm, mainly used to test games located outside of the bundle.

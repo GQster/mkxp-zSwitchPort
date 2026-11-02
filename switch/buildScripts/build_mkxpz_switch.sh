@@ -79,11 +79,20 @@ fi
 echo "🔧 Configuring mkxp-z for Nintendo Switch with Meson..."
 echo ""
 
+# default_system=enabled: take every dependency from portlibs or the
+# overrides in src/meson.build, never from a vendored subproject build.
+# b_staticpic=false: libmkxp-z.a would otherwise get -fPIC after the cross
+# file's -fPIE, and -fPIC with -mtp=soft triggers devkitA64's TLS miscompile
+# (switch/notes/round6-pixman/tls-audit.txt).
 meson setup "${BUILD}" "${ROOT}" \
     --cross-file "${CROSS_FILE}" \
     -Ddefault_library=static \
     -Dbuildtype=release \
-    -Duse_miniffi=false
+    -Duse_miniffi=false \
+    -Ddefault_system=enabled \
+    -Dmri_version=3.2 \
+    -Dopenssl=disabled \
+    -Db_staticpic=false
 
 if [ $? -ne 0 ]; then
     echo ""
@@ -104,6 +113,9 @@ echo ""
 
 ninja -C "${BUILD}" -v
 
+# The executable is named mkxp-z.<host cpu> (see exe_name in meson.build)
+ELF="${BUILD}/mkxp-z.$(sed -n "s/^cpu *= *'\(.*\)'/\1/p" "${CROSS_FILE}")"
+
 if [ $? -ne 0 ]; then
     echo ""
     echo "❌ Build failed!"
@@ -116,7 +128,7 @@ echo "════════════════════════�
 echo "  🎉 Build Successful!"
 echo "════════════════════════════════════════════════════════════"
 echo ""
-echo "Output ELF: ${BUILD}/mkxp-z"
+echo "Output ELF: ${ELF}"
 echo ""
 
 # ──────────────────────────────────────────────────────────────
@@ -141,7 +153,7 @@ if command -v nacptool > /dev/null 2>&1 && command -v elf2nro > /dev/null 2>&1; 
         cp "${ROOT}/scripts/preload/win32_wrap.rb" "${BUILD}/romfs/preload/"
 
         # Generate .nro with .nacp
-        elf2nro "${BUILD}/mkxp-z" "${BUILD}/mkxp-z.nro" \
+        elf2nro "${ELF}" "${BUILD}/mkxp-z.nro" \
             --icon="${ROOT}/switch/icon.jpg" \
             --nacp="${BUILD}/mkxp-z.nacp" \
             --romfsdir="${BUILD}/romfs"

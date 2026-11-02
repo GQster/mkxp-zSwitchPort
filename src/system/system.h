@@ -13,7 +13,8 @@
 #define MKXPZ_PLATFORM_WINDOWS 0
 #define MKXPZ_PLATFORM_MACOS 1
 #define MKXPZ_PLATFORM_LINUX 2
-#define MKXPZ_PLATFORM_SWITCH 3
+#define MKXPZ_PLATFORM_BSD 3
+#define MKXPZ_PLATFORM_SWITCH 4
 
 #ifdef __WIN32__
 #define MKXPZ_PLATFORM MKXPZ_PLATFORM_WINDOWS
@@ -23,6 +24,8 @@
 #define MKXPZ_PLATFORM MKXPZ_PLATFORM_SWITCH
 #elif defined __linux__
 #define MKXPZ_PLATFORM MKXPZ_PLATFORM_LINUX
+#elif defined __DragonFly__ || defined __FreeBSD__ || defined __NetBSD__ || defined __OpenBSD__
+#define MKXPZ_PLATFORM MKXPZ_PLATFORM_BSD
 #else
 #error "Can't identify platform."
 #endif
@@ -31,7 +34,8 @@ namespace systemImpl {
 enum WineHostType {
     Windows,
     Linux,
-    Mac
+    Mac,
+    Bsd,
 };
 std::string getSystemLanguage();
 std::string getUserName();
@@ -42,10 +46,8 @@ bool isRosetta();
 WineHostType getRealHostType();
 }
 
-#ifdef MKXPZ_BUILD_XCODE
-std::string getPlistValue(const char *key);
+#ifdef __APPLE__
 void openSettingsWindow();
-bool isMetalSupported();
 #endif
 
 namespace mkxp_sys = systemImpl;

@@ -51,8 +51,9 @@
 
 #include "sigslot/signal.hpp"
 
-#include <math.h>
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 
 extern "C" {
 #include "libnsgif/libnsgif.h"
@@ -81,6 +82,10 @@ throw Exception(Exception::MKXPError, \
 }
 
 #define OUTLINE_SIZE 1
+
+#ifndef INT16_MAX
+#define INT16_MAX 32767
+#endif
 
 /* Normalize (= ensure width and
  * height are positive) */
@@ -236,13 +241,23 @@ struct BitmapPrivate
      * If we're blitting / drawing text to a cleared part
      * with full opacity, we can disregard any old contents
      * in the texture and blit to it directly, saving
-     * ourselves the expensive blending calculation */
+     * ourselves the expensive blending calculation. */
+     
+    /* pixman_region16_t supports bitmaps whose largest
+     * dimension is no more than 32767 pixels.
+     * Be certain to set pixmanUseRegion32 in the
+     * constructor for larger bitmaps. */
     pixman_region16_t tainted;
+    pixman_region32_t tainted32;
+    bool pixmanUseRegion32;
 
     // For high-resolution texture replacement.
     Bitmap *selfHires;
     Bitmap *selfLores;
     bool assumingRubyGC;
+    
+    // Child bitmaps are created by Planes, Sprites, and Windows for mega surfaces
+    ChildPrivate *pChild;
     
     BitmapPrivate(Bitmap *self)
     : self(self),
@@ -250,7 +265,9 @@ struct BitmapPrivate
     selfHires(0),
     selfLores(0),
     surface(0),
-    assumingRubyGC(false)
+    pChild(0),
+    assumingRubyGC(false),
+    pixmanUseRegion32(false)
     {
         format = SDL_AllocFormat(SDL_PIXELFORMAT_ABGR8888);
         
@@ -274,7 +291,10 @@ struct BitmapPrivate
     {
         prepareCon.disconnect();
         SDL_FreeFormat(format);
-        pixman_region_fini(&tainted);
+        if (pixmanUseRegion32)
+            pixman_region32_fini(&tainted32);
+        else
+            pixman_region_fini(&tainted);
     }
     
     TEXFBO &getGLTypes() {
@@ -290,22 +310,38 @@ struct BitmapPrivate
     
     void allocSurface()
     {
-        surface = SDL_CreateRGBSurface(0, gl.width, gl.height, format->BitsPerPixel,
+        surface = SDL_CreateRGBSurface(0, getGLTypes().width, getGLTypes().height, format->BitsPerPixel,
                                        format->Rmask, format->Gmask,
                                        format->Bmask, format->Amask);
     }
     
     void clearTaintedArea()
     {
-        pixman_region_fini(&tainted);
-        pixman_region_init(&tainted);
+        if( pixmanUseRegion32)
+        {
+            pixman_region32_fini(&tainted32);
+            pixman_region32_init(&tainted32);
+        }
+        else
+        {
+            pixman_region_fini(&tainted);
+            pixman_region_init(&tainted);
+        }
     }
     
     void addTaintedArea(const IntRect &rect)
     {
         IntRect norm = normalizedRect(rect);
-        pixman_region_union_rect
-        (&tainted, &tainted, norm.x, norm.y, norm.w, norm.h);
+        if (pixmanUseRegion32)
+        {
+            pixman_region32_union_rect
+            (&tainted32, &tainted32, norm.x, norm.y, norm.w, norm.h);
+        }
+        else
+        {
+            pixman_region_union_rect
+            (&tainted, &tainted, norm.x, norm.y, norm.w, norm.h);
+        }
     }
     
     void substractTaintedArea(const IntRect &rect)
@@ -313,24 +349,49 @@ struct BitmapPrivate
         if (!touchesTaintedArea(rect))
             return;
         
-        pixman_region16_t m_reg;
-        pixman_region_init_rect(&m_reg, rect.x, rect.y, rect.w, rect.h);
-        
-        pixman_region_subtract(&tainted, &m_reg, &tainted);
-        
-        pixman_region_fini(&m_reg);
+        if (pixmanUseRegion32)
+        {
+            pixman_region32_t m_reg;
+            pixman_region32_init_rect(&m_reg, rect.x, rect.y, rect.w, rect.h);
+            
+            pixman_region32_subtract(&tainted32, &m_reg, &tainted32);
+            
+            pixman_region32_fini(&m_reg);
+        }
+        else
+        {
+            pixman_region16_t m_reg;
+            pixman_region_init_rect(&m_reg, rect.x, rect.y, rect.w, rect.h);
+            
+            pixman_region_subtract(&tainted, &m_reg, &tainted);
+            
+            pixman_region_fini(&m_reg);
+        }
     }
     
     bool touchesTaintedArea(const IntRect &rect)
     {
-        pixman_box16_t box;
-        box.x1 = rect.x;
-        box.y1 = rect.y;
-        box.x2 = rect.x + rect.w;
-        box.y2 = rect.y + rect.h;
-        
-        pixman_region_overlap_t result =
-        pixman_region_contains_rectangle(&tainted, &box);
+        pixman_region_overlap_t result;
+        if (pixmanUseRegion32)
+        {
+            pixman_box32_t box;
+            box.x1 = rect.x;
+            box.y1 = rect.y;
+            box.x2 = rect.x + rect.w;
+            box.y2 = rect.y + rect.h;
+            
+            result = pixman_region32_contains_rectangle(&tainted32, &box);
+        }
+        else
+        {
+            pixman_box16_t box;
+            box.x1 = rect.x;
+            box.y1 = rect.y;
+            box.x2 = rect.x + rect.w;
+            box.y2 = rect.y + rect.h;
+            
+            result = pixman_region_contains_rectangle(&tainted, &box);
+        }
         
         return result != PIXMAN_REGION_OUT;
     }
@@ -387,17 +448,29 @@ struct BitmapPrivate
     void fillRect(const IntRect &rect,
                   const Vec4 &color)
     {
-        bindFBO();
-        
-        glState.scissorTest.pushSet(true);
-        glState.scissorBox.pushSet(normalizedRect(rect));
-        glState.clearColor.pushSet(color);
-        
-        FBO::clear();
-        
-        glState.clearColor.pop();
-        glState.scissorBox.pop();
-        glState.scissorTest.pop();
+        if (megaSurface)
+        {
+            uint8_t r, g, b, a;
+            r = clamp<float>(color.x, 0, 1) * 255.0f;
+            g = clamp<float>(color.y, 0, 1) * 255.0f;
+            b = clamp<float>(color.z, 0, 1) * 255.0f;
+            a = clamp<float>(color.w, 0, 1) * 255.0f;
+            SDL_FillRect(megaSurface, &rect, SDL_MapRGBA(format, r, g, b, a));
+        }
+        else
+        {
+            bindFBO();
+            
+            glState.scissorTest.pushSet(true);
+            glState.scissorBox.pushSet(normalizedRect(rect));
+            glState.clearColor.pushSet(color);
+            
+            FBO::clear();
+            
+            glState.clearColor.pop();
+            glState.scissorBox.pop();
+            glState.scissorTest.pop();
+        }
     }
     
     static void ensureFormat(SDL_Surface *&surf, Uint32 format)
@@ -537,7 +610,13 @@ Bitmap::Bitmap(const char *filename)
         }
         
         p = new BitmapPrivate(this);
-        
+        if (handler.gif->width > INT16_MAX || handler.gif->height > INT16_MAX)
+        {
+            p->pixmanUseRegion32 = true;
+            pixman_region_fini(&p->tainted);
+            pixman_region32_init(&p->tainted32);
+        }
+
         p->selfHires = hiresBitmap;
         
         if (handler.gif->frame_count == 1) {
@@ -632,7 +711,7 @@ Bitmap::Bitmap(const char *filename)
 
     SDL_Surface *imgSurf = handler.surface;
 
-    initFromSurface(imgSurf, hiresBitmap, false);
+    initFromSurface(imgSurf, hiresBitmap, hiresBitmap && hiresBitmap->isMega());
 }
 
 Bitmap::Bitmap(int width, int height, bool isHires)
@@ -651,22 +730,45 @@ Bitmap::Bitmap(int width, int height, bool isHires)
         hiresBitmap->setLores(this);
     }
 
-    TEXFBO tex;
-    try {
-        tex = shState->texPool().request(width, height);
-    } catch (const Exception &e) {
-        if (hiresBitmap)
-            delete hiresBitmap;
-        throw e;
+    if (width > glState.caps.maxTexSize || height > glState.caps.maxTexSize || (hiresBitmap && hiresBitmap->isMega()))
+    {
+        p = new BitmapPrivate(this);
+        SDL_Surface *surface = SDL_CreateRGBSurface(0, width, height, p->format->BitsPerPixel,
+                                                    p->format->Rmask,
+                                                    p->format->Gmask,
+                                                    p->format->Bmask,
+                                                    p->format->Amask);
+        if (!surface)
+            throw Exception(Exception::SDLError, "Error creating Bitmap: %s",
+                            SDL_GetError());
+        p->megaSurface = surface;
+        SDL_SetSurfaceBlendMode(p->megaSurface, SDL_BLENDMODE_NONE);
+    }
+    else
+    {
+        TEXFBO tex;
+        try {
+            tex = shState->texPool().request(width, height);
+        } catch (const Exception &e) {
+            if (hiresBitmap)
+                delete hiresBitmap;
+            throw e;
+        }
+        
+        p = new BitmapPrivate(this);
+        p->gl = tex;
+        p->selfHires = hiresBitmap;
+        if (p->selfHires != nullptr) {
+            p->gl.selfHires = &p->selfHires->getGLTypes();
+        }
     }
     
-    p = new BitmapPrivate(this);
-    p->gl = tex;
-    p->selfHires = hiresBitmap;
-    if (p->selfHires != nullptr) {
-        p->gl.selfHires = &p->selfHires->getGLTypes();
+    if (width > INT16_MAX || height > INT16_MAX)
+    {
+        p->pixmanUseRegion32 = true;
+        pixman_region_fini(&p->tainted);
+        pixman_region32_init(&p->tainted32);
     }
-    
     clear();
 }
 
@@ -713,6 +815,12 @@ Bitmap::Bitmap(void *pixeldata, int width, int height)
         SDL_FreeSurface(surface);
     }
     
+    if (width > INT16_MAX || height > INT16_MAX)
+    {
+        p->pixmanUseRegion32 = true;
+        pixman_region_fini(&p->tainted);
+        pixman_region32_init(&p->tainted32);
+    }
     p->addTaintedArea(rect());
 }
 
@@ -720,7 +828,6 @@ Bitmap::Bitmap(void *pixeldata, int width, int height)
 Bitmap::Bitmap(const Bitmap &other, int frame)
 {
     other.guardDisposed();
-    other.ensureNonMega();
     if (frame > -2) other.ensureAnimated();
     
     if (other.hasHires()) {
@@ -728,9 +835,13 @@ Bitmap::Bitmap(const Bitmap &other, int frame)
     }
 
     p = new BitmapPrivate(this);
-    
+
+    if (other.isMega())
+    {
+        p->megaSurface = SDL_ConvertSurfaceFormat(other.p->megaSurface, p->format->format, 0);
+    }
     // TODO: Clean me up
-    if (!other.isAnimated() || frame >= -1) {
+    else if (!other.isAnimated() || frame >= -1) {
         try {
             p->gl = shState->texPool().request(other.width(), other.height());
         } catch (const Exception &e) {
@@ -778,7 +889,17 @@ Bitmap::Bitmap(const Bitmap &other, int frame)
         }
     }
     
-    p->addTaintedArea(rect());
+    if (width() > INT16_MAX || height() > INT16_MAX)
+    {
+        p->pixmanUseRegion32 = true;
+        pixman_region_fini(&p->tainted);
+        pixman_region32_init(&p->tainted32);
+        pixman_region32_copy(&p->tainted32, &other.p->tainted32);
+    }
+    else
+    {
+        pixman_region_copy(&p->tainted, &other.p->tainted);
+    }
 }
 
 Bitmap::Bitmap(TEXFBO &other)
@@ -813,6 +934,12 @@ Bitmap::Bitmap(TEXFBO &other)
         GLMeta::blitEnd();
     }
 
+    if (width() > INT16_MAX || height() > INT16_MAX)
+    {
+        p->pixmanUseRegion32 = true;
+        pixman_region_fini(&p->tainted);
+        pixman_region32_init(&p->tainted32);
+    }
     p->addTaintedArea(rect());
 }
 
@@ -879,7 +1006,526 @@ void Bitmap::initFromSurface(SDL_Surface *imgSurf, Bitmap *hiresBitmap, bool for
         SDL_FreeSurface(imgSurf);
     }
     
+    if (width() > INT16_MAX || height() > INT16_MAX)
+    {
+        p->pixmanUseRegion32 = true;
+        pixman_region_fini(&p->tainted);
+        pixman_region32_init(&p->tainted32);
+    }
     p->addTaintedArea(rect());
+}
+
+/* "Child" bitmaps are a hack to support mega surfaces in Windows, Planes, and Sprites.
+ * They determine which part of the parent will be visible, manually shrink it if necessary,
+ * and send back new values for zoom and offsets. */
+
+struct ChildPrivate
+{
+    Bitmap *self;
+    Bitmap *parent;
+    
+    ChildPublic shared;
+    
+    sigslot::connection dirtyCon;
+    sigslot::connection disposeCon;
+    
+    Vec2i parentPos;
+    IntRect srcRect;
+    IntRect oldSrcRect;
+    bool dirty;
+    Vec2 maxShrink;
+    Vec2 currentZoom;
+    Vec2 currentShrink;
+    bool mirrored;
+    int currentBushDepth;
+    Transform *trans;
+    IntRect oldVR;
+    Vec2i oldOff;
+    
+    
+    ChildPrivate(Bitmap *self, Bitmap *parent)
+    : self(self),
+    parent(parent),
+    dirty(true),
+    mirrored(false)
+    {
+        shared.width = parent->width();
+        shared.height = parent->height();
+        
+        shared.realSrcRect.w = parent->width();
+        shared.realSrcRect.h = parent->height();
+        shared.srcRect.w = parent->width();
+        shared.srcRect.h = parent->height();
+        oldSrcRect = shared.realSrcRect;
+        
+        maxShrink.x = (float)self->width() / parent->width();
+        maxShrink.y = (float)self->height() / parent->height();
+        currentZoom.x = 1.0f;
+        currentZoom.y = 1.0f;
+        currentShrink.x = 1.0f;
+        currentShrink.y = 1.0f;
+        
+        dirtyCon = parent->modified.connect(&ChildPrivate::childDirty, this);
+        disposeCon = parent->wasDisposed.connect(&ChildPrivate::parentDisposed, this);
+    }
+    
+    ~ChildPrivate()
+    {
+        dirtyCon.disconnect();
+        disposeCon.disconnect();
+    }
+    
+    void childDirty()
+    {
+        dirty = true;
+    }
+    
+    void parentDisposed()
+    {
+        self->dispose();
+    }
+};
+
+Bitmap *Bitmap::spawnChild()
+{
+    Bitmap *child;
+    if(p->selfHires)
+    {
+        int childWidth = std::min(p->selfHires->width(), glState.caps.maxTexSize);
+        int childHeight = std::min(p->selfHires->height(), glState.caps.maxTexSize);
+        double scalingFactor = std::max(p->selfHires->width() / width(), p->selfHires->height() / height());
+        double maxRatio = std::min((double)childWidth / shState->graphics().width(),
+                                   (double)childHeight / shState->graphics().height());
+        scalingFactor = std::min(maxRatio, scalingFactor);
+        int loresWidth = (int)lround(scalingFactor * childWidth);
+        int loresHeight = (int)lround(scalingFactor * childHeight);
+        child = new Bitmap(loresWidth, loresHeight, true);
+        Bitmap *hires = new Bitmap(childWidth, childHeight, true);
+        hires->setLores(child);
+        child->p->selfHires = hires;
+    }
+    else
+    {
+        int childWidth = std::min(width(), glState.caps.maxTexSize);
+        int childHeight = std::min(height(), glState.caps.maxTexSize);
+        child = new Bitmap(childWidth, childHeight, true);
+    }
+    
+    
+    child->p->pChild = new ChildPrivate(child, this);
+    
+    return child;
+}
+
+ChildPublic *Bitmap::getChildInfo()
+{
+    if (p->pChild)
+        return &p->pChild->shared;
+    return 0;
+}
+
+void Bitmap::childUpdate()
+{
+    if (!p->pChild)
+        return;
+    
+    ChildPrivate *pChild = p->pChild;
+    
+    bool isWindow = pChild->shared.realZoom.x == -1.0f;
+    bool isPlane = pChild->shared.wrap;
+    bool isSprite = !isWindow && !isPlane;
+    
+    if (!pChild->shared.realZoom.x || !pChild->shared.realZoom.y)
+    {
+        pChild->shared.isVisible = false;
+        return;
+    }
+    
+    IntRect viewportRect(0, 0, shState->graphics().width(), shState->graphics().height());
+    
+    if (!SDL_IntersectRect(&viewportRect, pChild->shared.sceneRect, &viewportRect))
+    {
+        pChild->shared.zoom.x = pChild->shared.realZoom.x;
+        pChild->shared.zoom.y = pChild->shared.realZoom.y;
+        pChild->shared.isVisible = false;
+        return;
+    }
+    
+    if (isWindow)
+    {
+        viewportRect.x = pChild->shared.sceneRect->x;
+        viewportRect.y = pChild->shared.sceneRect->y;
+        IntRect window(pChild->shared.x + viewportRect.x - pChild->shared.sceneOrig->x,
+                       pChild->shared.y + viewportRect.y - pChild->shared.sceneOrig->y,
+                       pChild->shared.width, pChild->shared.height);
+        if (!SDL_IntersectRect(&viewportRect, &window, &viewportRect))
+        {
+            pChild->shared.isVisible = false;
+            return;
+        }
+        viewportRect.x = std::min(0, window.x);
+        viewportRect.y = std::min(0, window.y);
+    }
+    
+    bool updateNeeded = pChild->dirty;
+    
+    IntRect visibleRect = viewportRect;
+    
+    Vec2 realZoom(abs(pChild->shared.realZoom.x), abs(pChild->shared.realZoom.y));
+    Vec2 shrink(1.0f, 1.0f);
+    
+    IntRect adjustedSrcRect = pChild->shared.realSrcRect;
+    if (isSprite)
+    {
+        if (pChild->shared.realSrcRect.x < 0)
+            adjustedSrcRect.w += pChild->shared.realSrcRect.x;
+        if (pChild->shared.realSrcRect.y < 0)
+            adjustedSrcRect.h += pChild->shared.realSrcRect.y;
+        adjustedSrcRect.x = clamp(adjustedSrcRect.x, 0, pChild->parent->width());
+        adjustedSrcRect.y = clamp(adjustedSrcRect.y, 0, pChild->parent->height());
+        adjustedSrcRect.w = clamp(adjustedSrcRect.w, 0, pChild->shared.width - adjustedSrcRect.x);
+        adjustedSrcRect.h = clamp(adjustedSrcRect.h, 0, pChild->shared.height - adjustedSrcRect.y);
+        
+        if (!adjustedSrcRect.w || !adjustedSrcRect.h)
+        {
+            pChild->shared.isVisible = false;
+            return;
+        }
+    }
+    else
+        adjustedSrcRect = pChild->shared.realSrcRect;
+    
+    if (isPlane || isSprite)
+    {
+        visibleRect.x = pChild->shared.x - pChild->shared.sceneOrig->x + std::min(pChild->shared.sceneRect->x, 0);
+        visibleRect.y = pChild->shared.y - pChild->shared.sceneOrig->y + std::min(pChild->shared.sceneRect->y, 0);
+        
+        if (pChild->shared.angle)
+        {
+            // rotate visibleRect clockwise around visibleRect.x and visibleRect.y
+            FloatRect tmpRect = rotate_rect(visibleRect.pos(), -pChild->shared.angle,
+                                       IntRect(Vec2i(),visibleRect.size()));
+            tmpRect.x = floor(-tmpRect.x) + visibleRect.x;
+            tmpRect.y = floor(-tmpRect.y) + visibleRect.y;
+            visibleRect = tmpRect;
+        }
+        
+        if (pChild->shared.waveAmp > 0)
+        {
+            /* At the moment the wave gets rotated too, which isn't what RGSS does.
+               If that's ever fixed, then this needs to be moved to before the rotation. */
+            
+            /* The edge of the wave can still poke through sometimes for some reason,
+               so we provide an extra 1 pixel buffer to ensure it can't happen. */
+            visibleRect.x += pChild->shared.waveAmp + 1;
+            visibleRect.w += pChild->shared.waveAmp * 2 + 2;
+        }
+        
+        // maxShrink is the point at which the entire parent fits into the child
+        Vec2 maxShrink;
+        if (isSprite)
+        {
+            maxShrink.x = std::min((float)width() / adjustedSrcRect.w, 1.0f);
+            maxShrink.y = std::min((float)height() / adjustedSrcRect.h, 1.0f);
+        }
+        else // Planes can just use the cached values
+        {
+            maxShrink = pChild->maxShrink;
+        }
+        shrink.x = clamp(std::min(width(), adjustedSrcRect.w) * realZoom.x / visibleRect.w, maxShrink.x, 1.0f);
+        shrink.y = clamp(std::min(height(), adjustedSrcRect.h) * realZoom.y / visibleRect.h, maxShrink.y, 1.0f);
+        
+        // Uncomment to force max shrink for testing
+        /*
+        shrink.x = std::min(pChild->maxShrink.x, 1.0f);
+        shrink.y = std::min(pChild->maxShrink.y, 1.0f);
+        //*/
+        
+        pChild->shared.zoom.x = realZoom.x / shrink.x;
+        pChild->shared.zoom.y = realZoom.y / shrink.y;
+        if(!(shrink == pChild->currentShrink))
+            updateNeeded = true;
+        
+        visibleRect.x = round(visibleRect.x / realZoom.x);
+        visibleRect.y = round(visibleRect.y / realZoom.y);
+        visibleRect.w = ceil(visibleRect.w / realZoom.x);
+        visibleRect.h = ceil(visibleRect.h / realZoom.y);
+        if (pChild->shared.wrap)
+        {
+            visibleRect.x = -wrapRange(-visibleRect.x, 0, adjustedSrcRect.w);
+            visibleRect.y = -wrapRange(-visibleRect.y, 0, adjustedSrcRect.h);
+        }
+    }
+    
+    int realOX = pChild->shared.realOffset.x;
+    int realOY = pChild->shared.realOffset.y;
+    
+    if (isSprite)
+    {
+        if (pChild->shared.realSrcRect.x < 0)
+            realOX += pChild->shared.realSrcRect.x;
+        if (pChild->shared.realSrcRect.y < 0)
+            realOY += pChild->shared.realSrcRect.y;
+    }
+    
+    
+    // If none of this has changed, then we can just return now
+    if (!updateNeeded && pChild->oldVR == visibleRect && pChild->oldOff == Vec2i(realOX, realOY) &&
+        (pChild->shared.wrap ||
+         (pChild->mirrored == pChild->shared.mirrored && pChild->shared.realSrcRect == pChild->oldSrcRect))
+       )
+    {
+        return;
+    }
+    pChild->oldOff = Vec2i(realOX, realOY);
+    pChild->oldVR = visibleRect;
+    
+    if (!isPlane)
+    {
+        // Double the visibleRect.pos, because I should be using a
+        // zeroed out position for the visibleRect but doing this is easier
+        IntRect tmpSourceRect(visibleRect.pos() * 2 - Vec2i(realOX, realOY),
+                              adjustedSrcRect.size());
+        if (!SDL_HasIntersection(&visibleRect, &tmpSourceRect))
+        {
+            pChild->shared.isVisible = false;
+            return;
+        }
+        if (pChild->shared.angle)
+        {
+            // Rotating the viewport leaves triangles on all sides that are considered in bounds.
+            // By also rotating the source rect and comparing it to the unrotated viewport, we can
+            // be certain if the sprite is visible or not.
+            tmpSourceRect.x = floor(-realOX * realZoom.x);
+            tmpSourceRect.y = floor(-realOY * realZoom.y);
+            tmpSourceRect.w = ceil(tmpSourceRect.w * realZoom.x);
+            tmpSourceRect.h = ceil(tmpSourceRect.h * realZoom.x);
+            FloatRect tmpRect = rotate_rect(Vec2i(), pChild->shared.angle, tmpSourceRect);
+            Vec2i origin(pChild->shared.x - pChild->shared.sceneOrig->x + std::min(pChild->shared.sceneRect->x, 0),
+                         pChild->shared.y - pChild->shared.sceneOrig->y + std::min(pChild->shared.sceneRect->y, 0));
+            tmpRect.x = floor(tmpRect.x) + origin.x;
+            tmpRect.y = floor(tmpRect.y) + origin.y;
+            tmpSourceRect = tmpRect;
+            
+            if (!SDL_HasIntersection(&viewportRect, &tmpSourceRect))
+            {
+                pChild->shared.isVisible = false;
+                return;
+            }
+        }
+    }
+    
+    pChild->shared.isVisible = true;
+    
+    int selfWidth = round(width() / shrink.x);
+    int selfHeight = round(height() / shrink.y);
+    
+    int overflowX = std::max(selfWidth - visibleRect.w, 0);
+    int overflowY = std::max(selfHeight - visibleRect.h, 0);
+    
+    int minOX = pChild->parentPos.x;
+    int minOY = pChild->parentPos.y;
+    int maxOX = minOX + overflowX;
+    int maxOY = minOY + overflowY;
+    int maxOX2 = wrapRange(maxOX, 0, adjustedSrcRect.w);
+    int maxOY2 = wrapRange(maxOY, 0, adjustedSrcRect.h);
+    
+    int adjustedrealOX = -visibleRect.x + realOX;
+    int adjustedrealOY = -visibleRect.y + realOY;
+    
+    // The position in the srcRect that the child pulls from. Initialized to the previous run's result.
+    Vec2i newParentPos = pChild->parentPos;
+    
+    if (pChild->shared.wrap)
+    {
+        adjustedrealOX = wrapRange(adjustedrealOX, 0, adjustedSrcRect.w);
+        adjustedrealOY = wrapRange(adjustedrealOY, 0, adjustedSrcRect.h);
+    }
+    
+    for (int i = 0; i < 2; i++)
+    {
+        if (updateNeeded || (adjustedrealOX < minOX && (!pChild->shared.wrap || maxOX2 == maxOX || adjustedrealOX > maxOX2)) || adjustedrealOX > maxOX)
+        {
+            if (selfWidth >= adjustedSrcRect.w)
+                newParentPos.x = 0;
+            else
+                newParentPos.x = adjustedrealOX - overflowX / 2;
+            if (!pChild->shared.wrap)
+                newParentPos.x = clamp(newParentPos.x, 0,
+                                       std::max(adjustedSrcRect.w - selfWidth,0));
+        }
+        if (updateNeeded || (adjustedrealOY < minOY && (!pChild->shared.wrap || maxOY2 == maxOY || adjustedrealOY > maxOY2)) || adjustedrealOY > maxOY)
+        {
+            if (selfHeight >= adjustedSrcRect.h)
+                newParentPos.y = 0;
+            else
+                newParentPos.y = adjustedrealOY - overflowY / 2;
+            if (!pChild->shared.wrap)
+                newParentPos.y = clamp(newParentPos.y, 0,
+                                       std::max(adjustedSrcRect.h - selfHeight,0));
+        }
+        if (updateNeeded)
+        {
+            pChild->parentPos = newParentPos;
+        }
+        // If either x or y was updated, run through it again to update the other one
+        if (newParentPos != pChild->parentPos)
+            updateNeeded = true;
+        else
+            break;
+    }
+    
+    
+    if (!isSprite)
+    {
+        pChild->shared.offset.x = realOX - newParentPos.x;
+        pChild->shared.offset.y =  realOY - newParentPos.y;
+    }
+    
+    if (isPlane)
+    {
+        pChild->shared.offset.x = wrapRange(pChild->shared.offset.x - visibleRect.x, 0,
+                                            adjustedSrcRect.w);
+        pChild->shared.offset.y = wrapRange(pChild->shared.offset.y - visibleRect.y, 0,
+                                            adjustedSrcRect.h);
+        
+        // Leaving this as a float (and making plane.cpp store it as a float)
+        // makes positioning almost perfect when zoomed
+        pChild->shared.offset.x = pChild->shared.offset.x * realZoom.x;
+        pChild->shared.offset.y = pChild->shared.offset.y * realZoom.y;
+        
+        pChild->shared.offset.x -= pChild->shared.sceneOrig->x;
+        pChild->shared.offset.y -= pChild->shared.sceneOrig->y;
+        
+        pChild->shared.offset.x += std::min(pChild->shared.sceneRect->x, 0);
+        pChild->shared.offset.y += std::min(pChild->shared.sceneRect->y, 0);
+    }
+    else if (isSprite)
+    {
+        if (!updateNeeded && pChild->oldSrcRect != pChild->shared.realSrcRect)
+        {
+            if (pChild->srcRect.encloses(adjustedSrcRect))
+            {
+                pChild->shared.srcRect = IntRect(pChild->shared.realSrcRect.pos() - pChild->srcRect.pos(),
+                                                 pChild->shared.realSrcRect.size());
+                
+                pChild->shared.srcRect.x = floor(pChild->shared.srcRect.x * shrink.x);
+                pChild->shared.srcRect.y = floor(pChild->shared.srcRect.y * shrink.y);
+                pChild->shared.srcRect.w = round(pChild->shared.srcRect.w * shrink.x);
+                pChild->shared.srcRect.h = round(pChild->shared.srcRect.h * shrink.y);
+            }
+            else
+                updateNeeded = true;
+        }
+        pChild->oldSrcRect = pChild->shared.realSrcRect;
+        // Sprite stores the offsets as floats, and they get jittery when shrunk if we try to use ints,
+        // so we just leave it as a float and it works perfectly.
+        // We also use the srcRect to position the subimage for sprites instead of modifying the offset.
+        // It makes positioning the wave and bush effect a lot simpler.
+        pChild->shared.offset.x = pChild->shared.realOffset.x * shrink.x;
+        pChild->shared.offset.y = pChild->shared.realOffset.y * shrink.y;
+        
+        if (pChild->shared.mirrored)
+        {
+            newParentPos.x = std::max(adjustedSrcRect.w - selfWidth, 0) - newParentPos.x;
+        }
+        
+        if (pChild->mirrored != pChild->shared.mirrored && selfWidth != adjustedSrcRect.w)
+            updateNeeded = true;
+        pChild->mirrored = pChild->shared.mirrored;
+    }
+    
+    if (updateNeeded)
+    {
+        if (pChild->shared.wrap)
+        {
+            newParentPos.x = wrapRange(newParentPos.x, 0, adjustedSrcRect.w);
+            newParentPos.y = wrapRange(newParentPos.y, 0, adjustedSrcRect.h);
+        }
+        
+        std::vector<IntRect> subrects;
+        long locNum = 1;
+        IntRect baseRect(newParentPos.x + adjustedSrcRect.x,
+                         newParentPos.y + adjustedSrcRect.y,
+                         std::min(selfWidth, adjustedSrcRect.w - newParentPos.x),
+                         std::min(selfHeight, adjustedSrcRect.h - newParentPos.y));
+        
+        if (isSprite)
+        {
+            int deltaW = selfWidth - baseRect.w;
+            int deltaH = selfHeight - baseRect.h;
+            
+            if (deltaW)
+            {
+                baseRect.x = clamp(baseRect.x - (int)ceil(deltaW / 2.0f), 0, pChild->parent->width() - selfWidth);
+                baseRect.w = selfWidth;
+            }
+            if (deltaH)
+            {
+                baseRect.y = clamp(baseRect.y - (int)ceil(deltaH / 2.0f), 0, pChild->parent->height() - selfHeight);
+                baseRect.h = selfHeight;
+            }
+            
+            if (adjustedSrcRect.w > baseRect.w && pChild->mirrored)
+            {
+                float x = (pChild->shared.realSrcRect.x + pChild->shared.realSrcRect.w) - (baseRect.x + baseRect.w);
+                pChild->shared.srcRect.x = (std::min(pChild->shared.realSrcRect.x, 0) - x) * shrink.x;
+            }
+            else
+            {
+                pChild->shared.srcRect.x = (pChild->shared.realSrcRect.x - baseRect.x) * shrink.x;
+            }
+            pChild->shared.srcRect.w = pChild->shared.realSrcRect.w * shrink.x;
+            pChild->shared.srcRect.y = (pChild->shared.realSrcRect.y - baseRect.y) * shrink.y;
+            pChild->shared.srcRect.h = pChild->shared.realSrcRect.h * shrink.y;
+            
+            pChild->srcRect = baseRect;
+        }
+        
+        subrects.push_back(baseRect);
+        if (pChild->shared.wrap && baseRect.w < selfWidth)
+        {
+            locNum *= 2;
+            subrects.push_back(IntRect(0, baseRect.y,
+                                                selfWidth - baseRect.w,
+                                                baseRect.h));
+        }
+        if (pChild->shared.wrap && baseRect.h < selfHeight)
+        {
+            locNum *= 2;
+            subrects.push_back(IntRect(baseRect.x, 0,
+                                                baseRect.w,
+                                                selfHeight - baseRect.h));
+        }
+        if (locNum == 4)
+        {
+            subrects.push_back(IntRect(0, 0,
+                                                selfWidth - baseRect.w,
+                                                selfHeight - baseRect.h));
+        }
+        
+        clear();
+        
+        int bufferX = 0;
+        int bufferY = 0;
+        for (long i = 0; i < locNum; i++)
+        {
+            IntRect sourceRect = subrects[i];
+            IntRect destRect(sourceRect.x == baseRect.x ? 0 : bufferX,
+                             sourceRect.y == baseRect.y ? 0 : bufferY,
+                             sourceRect.x == baseRect.x ? round(sourceRect.w * shrink.x) : width() - bufferX,
+                             sourceRect.y == baseRect.y ? round(sourceRect.h * shrink.y) : height() - bufferY);
+            if (!bufferX)
+            {
+                bufferX = destRect.w;
+                bufferY = destRect.h;
+            }
+            stretchBlt(destRect, *pChild->parent, sourceRect, 255);
+        }
+        
+        pChild->dirty = false;
+        pChild->currentShrink = shrink;
+    }
 }
 
 int Bitmap::width() const
@@ -921,7 +1567,6 @@ DEF_ATTR_RD_SIMPLE(Bitmap, Hires, Bitmap*, p->selfHires)
 void Bitmap::setHires(Bitmap *hires) {
     guardDisposed();
 
-    Debug() << "BUG: High-res Bitmap setHires not fully implemented, expect bugs";
     hires->setLores(this);
     p->selfHires = hires;
 }
@@ -931,6 +1576,9 @@ void Bitmap::setLores(Bitmap *lores) {
 
     p->selfLores = lores;
     loresDispCon = lores->wasDisposed.connect(&Bitmap::loresDisposal, this);
+
+    if (p->font && p->font != &shState->defaultFont())
+        p->font->setHiresMult((float)width() / (float)lores->width());
 }
 
 bool Bitmap::isMega() const{
@@ -1039,14 +1687,55 @@ static bool shrinkRects(int &sourcePos, int &sourceLen, const int &sBitmapLen,
     return ret || sourceLen == 0 || destLen == 0;
 }
 
+static float bltNormOpacity(enum Bitmap::BitmapBltMode mode, int opacity)
+{
+    opacity = clamp(opacity, 0, 255);
+
+    switch (mode)
+    {
+        case Bitmap::NORMAL:
+            return (float)opacity / 255.0f;
+
+        case Bitmap::KGL_SUBTRACT:
+            return opacity >= 255 ? 1.0f : (float)opacity / 256.0f;
+    }
+}
+
+static void bltFilter(enum Bitmap::BitmapBltMode mode, uint32_t &dst_pixel, uint32_t src_pixel, float norm_opacity)
+{
+    switch (mode)
+    {
+        case Bitmap::NORMAL:
+            __builtin_unreachable();
+            break;
+
+        case Bitmap::KGL_SUBTRACT:
+            for (size_t i = 0; i < 3; ++i)
+            {
+                uint8_t &old_component = ((uint8_t *)&dst_pixel)[i];
+                uint8_t old_component_with_opacity = (uint8_t)std::round(norm_opacity * (float)old_component);
+                uint8_t new_component = ((uint8_t *)&src_pixel)[i];
+                old_component = new_component > old_component_with_opacity ? new_component - old_component_with_opacity : 0;
+            }
+            ((uint8_t *)&dst_pixel)[3] = 255;
+            break;
+    }
+}
+
+static uint32_t &getPixelAt(SDL_Surface *surf, SDL_PixelFormat *form, int x, int y)
+{
+    size_t offset = x*form->BytesPerPixel + y*surf->pitch;
+    uint8_t *bytes = (uint8_t*) surf->pixels + offset;
+    
+    return *((uint32_t*) bytes);
+}
+
 void Bitmap::stretchBlt(IntRect destRect,
                         const Bitmap &source, IntRect sourceRect,
-                        int opacity, bool smooth)
+                        int opacity, bool smooth,
+                        enum BitmapBltMode mode)
 {
     guardDisposed();
-
-    // Don't need this, right? This function is fine with megasurfaces it seems
-    //GUARD_MEGA;
 
     if (source.isDisposed())
         return;
@@ -1076,7 +1765,14 @@ void Bitmap::stretchBlt(IntRect destRect,
     opacity = clamp(opacity, 0, 255);
     
     if (opacity == 0)
-        return;
+        switch (mode) {
+            case NORMAL:
+                return;
+            case KGL_SUBTRACT:
+                break;
+        }
+    
+    float normOpacity = bltNormOpacity(mode, opacity);
     
     if(shrinkRects(sourceRect.x, sourceRect.w, source.width(), destRect.x, destRect.w, width()))
         return;
@@ -1085,7 +1781,7 @@ void Bitmap::stretchBlt(IntRect destRect,
     
     SDL_Surface *srcSurf = source.megaSurface();
     SDL_Surface *blitTemp = 0;
-    bool touchesTaintedArea = p->touchesTaintedArea(destRect);
+    bool touchesTaintedArea = mode != NORMAL || opacity < 255 || p->touchesTaintedArea(destRect);
     bool unpack_subimage = srcSurf && gl.unpack_subimage;
 
     const bool scaleIsOne = sourceRect.w == destRect.w && sourceRect.h == destRect.h;
@@ -1093,7 +1789,65 @@ void Bitmap::stretchBlt(IntRect destRect,
         smooth = false;
     }
 
-    if (!srcSurf && opacity == 255 && !touchesTaintedArea)
+    if (p->megaSurface)
+    {
+        if (!srcSurf)
+        {
+            source.createSurface();
+            srcSurf = source.p->surface;
+        }
+        
+        if (destRect.w < 0 || destRect.h < 0)
+        {
+            // SDL can't handle negative dimensions when blitting, so we have to do it manually
+            blitTemp = SDL_CreateRGBSurface(0, sourceRect.w, sourceRect.h, p->format->BitsPerPixel,
+                                                        p->format->Rmask, p->format->Gmask,
+                                                        p->format->Bmask, p->format->Amask);
+            
+            bool flipW = destRect.w < 0;
+            bool flipH = destRect.y < 0;
+            
+            for(int dx = 0, sx = (flipW ? sourceRect.x + sourceRect.w - 1 : sourceRect.x);
+                dx < sourceRect.w; dx++, (flipW ? sx-- : sx++))
+            {
+                for(int dy = 0, sy = (flipH ? sourceRect.y + sourceRect.h - 1 : sourceRect.y);
+                    dy < sourceRect.h; dy++, (flipH ? sy-- : sy++))
+                {
+                    uint32_t &srcPixel = getPixelAt(srcSurf, p->format, sx, sy);
+                    uint32_t &destPixel = getPixelAt(blitTemp, p->format, dx, dy);
+                    destPixel = srcPixel;
+                }
+            }
+            srcSurf = blitTemp;
+            sourceRect.x = sourceRect.y = 0;
+            destRect = normalizedRect(destRect);
+        }
+        
+        if (touchesTaintedArea)
+            SDL_SetSurfaceBlendMode(srcSurf, SDL_BLENDMODE_BLEND);
+        else
+            SDL_SetSurfaceBlendMode(srcSurf, SDL_BLENDMODE_NONE);
+        
+        Uint8 tempAlpha;
+        SDL_GetSurfaceAlphaMod(srcSurf, &tempAlpha);
+        SDL_SetSurfaceAlphaMod(srcSurf, opacity);
+        
+        if(scaleIsOne)
+            SDL_BlitSurface(srcSurf, &sourceRect, p->megaSurface, &destRect);
+        else
+            SDL_BlitScaled(srcSurf, &sourceRect, p->megaSurface, &destRect);
+        
+        SDL_SetSurfaceBlendMode(srcSurf, SDL_BLENDMODE_NONE);
+        SDL_SetSurfaceAlphaMod(srcSurf, tempAlpha);
+        
+        // Delete the source surface if the source is an animation
+        if (source.p->animation.enabled && source.p->surface)
+        {
+            SDL_FreeSurface(source.p->surface);
+            source.p->surface = 0;
+        }
+    }
+    else if (!srcSurf && !touchesTaintedArea)
     {
         /* Fast blit */
         // TODO: Use bitmapSmoothScaling/bitmapSmoothScalingDown configs for this.
@@ -1131,13 +1885,63 @@ void Bitmap::stretchBlt(IntRect destRect,
                     
                     if (smooth)
                     {
-                        error = SDL_SoftStretchLinear(srcSurf, &srcRect, blitTemp, 0);
+                        if (mode == NORMAL)
+                            error = SDL_SoftStretchLinear(srcSurf, &srcRect, blitTemp, 0);
+                        else
+                        {
+
+                            double w_ratio = (double)srcRect.w / (double)destRect.w;
+                            double h_ratio = (double)srcRect.h / (double)destRect.h;
+                            for (size_t r = 0; r < (size_t)blitTemp->h; ++r)
+                                for (size_t c = 0; c < (size_t)blitTemp->w; ++c)
+                                {
+                                    size_t src_c0 = (size_t)std::floor(w_ratio * c);
+                                    size_t src_r0 = (size_t)std::floor(h_ratio * r);
+                                    double src_w0 = w_ratio * c - src_c0;
+                                    double src_h0 = h_ratio * r - src_r0;
+                                    double src_00 = ((uint32_t *)srcSurf->pixels)[(size_t)srcSurf->w * ((size_t)srcRect.y + src_r0) + ((size_t)srcRect.x + src_c0)];
+                                    double src_01 = src_c0 + 1 >= (size_t)srcRect.w
+                                        ? src_00
+                                        : ((uint32_t *)srcSurf->pixels)[(size_t)srcSurf->w * ((size_t)srcRect.y + src_r0) + ((size_t)srcRect.x + src_c0 + 1)];
+                                    double src_10 = src_r0 + 1 >= (size_t)srcRect.h
+                                        ? src_00
+                                        : ((uint32_t *)srcSurf->pixels)[(size_t)srcSurf->w * ((size_t)srcRect.y + src_r0 + 1) + ((size_t)srcRect.x + src_c0)];
+                                    double src_11 = src_c0 + 1 >= (size_t)srcRect.w
+                                        ? src_10
+                                        : (size_t)src_r0 + 1 >= (size_t)srcRect.h
+                                        ? src_01
+                                        : ((uint32_t *)srcSurf->pixels)[(size_t)srcSurf->w * ((size_t)srcRect.y + src_r0 + 1) + ((size_t)srcRect.x + src_c0 + 1)];
+                                    uint32_t &dst_pixel = ((uint32_t *)blitTemp->pixels)[(size_t)blitTemp->w * r + c];
+                                    uint32_t src_pixel = std::round(
+                                        src_00 * (1. - src_w0) * (1. - src_h0)
+                                            + src_01 * (1. - src_w0) * src_h0
+                                            + src_10 * src_w0 * (1. - src_h0)
+                                            + src_11 * src_w0 * src_h0
+                                    );
+                                    bltFilter(mode, dst_pixel, src_pixel, normOpacity);
+                                }
+                        }
                         smooth = false;
                     }
                     else
                     {
-                        SDL_Rect tmpRect = {0, 0, blitTemp->w, blitTemp->h};
-                        error = SDL_LowerBlitScaled(srcSurf, &srcRect, blitTemp, &tmpRect);
+                        if (mode == NORMAL)
+                        {
+                            SDL_Rect tmpRect = {0, 0, blitTemp->w, blitTemp->h};
+                            error = SDL_LowerBlitScaled(srcSurf, &srcRect, blitTemp, &tmpRect);
+                        }
+                        else
+                        {
+                            double w_ratio = (double)srcRect.w / (double)destRect.w;
+                            double h_ratio = (double)srcRect.h / (double)destRect.h;
+                            for (size_t r = 0; r < (size_t)blitTemp->h; ++r)
+                                for (size_t c = 0; c < (size_t)blitTemp->w; ++c)
+                                {
+                                    uint32_t &dst_pixel = ((uint32_t *)blitTemp->pixels)[(size_t)blitTemp->w * r + c];
+                                    uint32_t src_pixel = ((uint32_t *)srcSurf->pixels)[(size_t)srcSurf->w * ((size_t)srcRect.y + (size_t)std::round(h_ratio * r)) + ((size_t)srcRect.x + (size_t)std::round(w_ratio * c))];
+                                    bltFilter(mode, dst_pixel, src_pixel, normOpacity);
+                                }
+                        }
                     }
                     unpack_subimage = false;
                 }
@@ -1170,10 +1974,10 @@ void Bitmap::stretchBlt(IntRect destRect,
                 sourceRect.y = 0;
             }
             
-            if (opacity == 255 && !touchesTaintedArea)
+            if (!touchesTaintedArea)
             {
                 if (!subImageFix &&
-                    sourceRect.w == destRect.w && sourceRect.h == destRect.h &&
+                    scaleIsOne &&
                     (unpack_subimage || (srcSurf->w == sourceRect.w && srcSurf->h == sourceRect.h))
                    )
                 {
@@ -1224,12 +2028,11 @@ void Bitmap::stretchBlt(IntRect destRect,
                 }
             }
         }
-        if (opacity < 255 || touchesTaintedArea)
+        if (touchesTaintedArea)
         {
             /* We're touching a tainted area or still need to reduce opacity */
              
             /* Fragment pipeline */
-            float normOpacity = (float) opacity / 255.0f;
             
             TEXFBO &gpTex = shState->gpTexFBO(abs(destRect.w), abs(destRect.h));
             Vec2i gpTexSize;
@@ -1282,7 +2085,7 @@ void Bitmap::stretchBlt(IntRect destRect,
                                    ((float) sourceWidth / sourceRect.w) * ((float) abs(destRect.w) / gpTex.width),
                                    ((float) sourceHeight / sourceRect.h) * ((float) abs(destRect.h) / gpTex.height));
             
-            BltShader &shader = shState->shaders().blt;
+            BltShader &shader = mode == KGL_SUBTRACT ? shState->shaders().kglSubtract : shState->shaders().blt;
             shader.bind();
             if (srcSurf)
             {
@@ -1334,7 +2137,6 @@ void Bitmap::fillRect(const IntRect &rect, const Vec4 &color)
 {
     guardDisposed();
     
-    GUARD_MEGA;
     GUARD_ANIMATED;
     
     if (hasHires()) {
@@ -1373,8 +2175,11 @@ void Bitmap::gradientFillRect(const IntRect &rect,
 {
     guardDisposed();
     
-    GUARD_MEGA;
     GUARD_ANIMATED;
+    
+    if (rect.w <= 0 || rect.h <= 0 || rect.x >= width() || rect.y >= height() ||
+        rect.w < -rect.x || rect.h < -rect.y)
+        return;
     
     if (hasHires()) {
         int destX, destY, destWidth, destHeight;
@@ -1386,35 +2191,85 @@ void Bitmap::gradientFillRect(const IntRect &rect,
         p->selfHires->gradientFillRect(IntRect(destX, destY, destWidth, destHeight), color1, color2, vertical);
     }
 
-    SimpleColorShader &shader = shState->shaders().simpleColor;
-    shader.bind();
-    shader.setTranslation(Vec2i());
-    
-    Quad &quad = shState->gpQuad();
-    
-    if (vertical)
+
+    if (p->megaSurface)
     {
-        quad.vert[0].color = color1;
-        quad.vert[1].color = color1;
-        quad.vert[2].color = color2;
-        quad.vert[3].color = color2;
+        float progress = 0.0f;
+        float invProgress = 1.0f;
+        Color c1 = color1;
+        Color c2 = color2;
+        int orig, end;
+        uint8_t r, g, b, a;
+        float max;
+        SDL_Rect destRect = rect;
+        int *current;
+        if (vertical)
+        {
+            destRect.w = std::min(rect.w, width() - rect.x);
+            destRect.h = 1;
+            
+            current = &destRect.y;
+            orig = rect.y;
+            max = rect.h - 1;
+            end = std::min(rect.y + rect.h, height());
+        }
+        else
+        {
+            destRect.w = 1;
+            destRect.h = std::min(rect.h, height() - rect.y);
+            
+            current = &destRect.x;
+            orig = rect.x;
+            max = rect.w - 1;
+            end = std::min(rect.x + rect.w, width());
+        }
+        while (*current < end)
+        {
+            progress = (*current - orig) / max;
+            invProgress = 1.0f - progress;
+            r = round((c1.red * invProgress) + (c2.red * progress));
+            g = round((c1.green * invProgress) + (c2.green * progress));
+            b = round((c1.blue * invProgress) + (c2.blue * progress));
+            a = round((c1.alpha * invProgress) + (c2.alpha * progress));
+            Uint32 color = SDL_MapRGBA(p->format, r, g, b, a);
+            
+            SDL_FillRect(p->megaSurface, &destRect, color);
+            
+            (*current)++;
+        }
     }
     else
     {
-        quad.vert[0].color = color1;
-        quad.vert[3].color = color1;
-        quad.vert[1].color = color2;
-        quad.vert[2].color = color2;
+        SimpleColorShader &shader = shState->shaders().simpleColor;
+        shader.bind();
+        shader.setTranslation(Vec2i());
+        
+        Quad &quad = shState->gpQuad();
+        
+        if (vertical)
+        {
+            quad.vert[0].color = color1;
+            quad.vert[1].color = color1;
+            quad.vert[2].color = color2;
+            quad.vert[3].color = color2;
+        }
+        else
+        {
+            quad.vert[0].color = color1;
+            quad.vert[3].color = color1;
+            quad.vert[1].color = color2;
+            quad.vert[2].color = color2;
+        }
+        
+        quad.setPosRect(rect);
+        
+        p->bindFBO();
+        p->pushSetViewport(shader);
+        
+        p->blitQuad(quad);
+        
+        p->popViewport();
     }
-    
-    quad.setPosRect(rect);
-    
-    p->bindFBO();
-    p->pushSetViewport(shader);
-    
-    p->blitQuad(quad);
-    
-    p->popViewport();
     
     p->addTaintedArea(rect);
     
@@ -1430,7 +2285,6 @@ void Bitmap::clearRect(const IntRect &rect)
 {
     guardDisposed();
     
-    GUARD_MEGA;
     GUARD_ANIMATED;
     
     if (hasHires()) {
@@ -1445,6 +2299,8 @@ void Bitmap::clearRect(const IntRect &rect)
 
     p->fillRect(rect, Vec4());
     
+    p->substractTaintedArea(rect);
+    
     p->onModified();
 }
 
@@ -1452,7 +2308,6 @@ void Bitmap::blur()
 {
     guardDisposed();
     
-    GUARD_MEGA;
     GUARD_ANIMATED;
     
     if (hasHires()) {
@@ -1461,43 +2316,130 @@ void Bitmap::blur()
 
     // TODO: Is there some kind of blur radius that we need to handle for high-res mode?
 
-    Quad &quad = shState->gpQuad();
-    FloatRect rect(0, 0, width(), height());
-    quad.setTexPosRect(rect, rect);
-    
-    TEXFBO auxTex = shState->texPool().request(width(), height());
-    
-    BlurShader &shader = shState->shaders().blur;
-    BlurShader::HPass &pass1 = shader.pass1;
-    BlurShader::VPass &pass2 = shader.pass2;
-    
-    glState.blend.pushSet(false);
-    glState.viewport.pushSet(IntRect(0, 0, width(), height()));
-    
-    TEX::bind(p->gl.tex);
-    FBO::bind(auxTex.fbo);
-    
-    pass1.bind();
-    pass1.setTexSize(Vec2i(width(), height()));
-    pass1.applyViewportProj();
-    
-    quad.draw();
-    
-    TEX::bind(auxTex.tex);
-    p->bindFBO();
-    
-    pass2.bind();
-    pass2.setTexSize(Vec2i(width(), height()));
-    pass2.applyViewportProj();
-    
-    quad.draw();
-    
-    glState.viewport.pop();
-    glState.blend.pop();
-    
-    shState->texPool().release(auxTex);
-    
-    p->onModified();
+    if(p->megaSurface)
+    {
+        int buffer = 5;
+        
+        int widthMult = 1;
+        int tmpWidth = width();
+        int bufferX = 0;
+        
+        int heightMult = 1;
+        int tmpHeight = height();
+        int bufferY = 0;
+        
+        if(width() > glState.caps.maxTexSize)
+        {
+            widthMult = ceil((float) width() / (glState.caps.maxTexSize - (buffer * 2)));
+            tmpWidth = ceil((float) width() / widthMult) + (buffer * 2);
+            bufferX = buffer;
+        }
+        if(height() > glState.caps.maxTexSize)
+        {
+            heightMult = ceil((float) height() / (glState.caps.maxTexSize - (buffer * 2)));
+            tmpHeight = ceil((float) height() / heightMult) + (buffer * 2);
+            bufferY = buffer;
+        }
+        
+        Bitmap *tmp = new Bitmap(tmpWidth + (bufferX * 2), tmpHeight + (bufferY * 2), true);
+        IntRect sourceRect = tmp->rect();
+        IntRect destRect = {};
+        
+        pixman_region16_t originalTainted;
+        pixman_region32_t originalTainted32;
+        if (p->pixmanUseRegion32)
+        {
+            pixman_region32_init(&originalTainted32);
+            pixman_region32_copy(&originalTainted32, &p->tainted32);
+        }
+        else
+        {
+            pixman_region_init(&originalTainted);
+            pixman_region_copy(&originalTainted, &p->tainted);
+        }
+        for (int i = 0; i < widthMult; i++)
+        {
+            int tmpX = i ? bufferX : 0;
+            sourceRect.x = (tmpWidth - tmpX) * i;
+            destRect.x = sourceRect.x + tmpX;
+            destRect.w = sourceRect.w - (bufferX * (i ? 2 : 1));
+            
+            for (int j = 0; j < heightMult; j++)
+            {
+                int tmpY = j ? bufferY : 0;
+                sourceRect.y = (tmpHeight - tmpY) * j;
+                destRect.y = sourceRect.y + tmpY;
+                destRect.h = sourceRect.h - (bufferY * (j ? 2 : 1));
+                
+                tmp->clear();
+                p->clearTaintedArea();
+                
+                IntRect tmpRect = tmp->rect();
+                tmpRect.x = tmpRect.w - std::min(sourceRect.w, width() - sourceRect.x);
+                tmpRect.y = tmpRect.h - std::min(sourceRect.h, height() - sourceRect.y);
+                tmpRect.w = sourceRect.w;
+                tmpRect.h = sourceRect.h;
+                
+                
+                tmp->stretchBlt(tmpRect, *this, sourceRect, 255);
+                tmp->blur();
+                
+                stretchBlt(destRect, *tmp, IntRect(tmpRect.x + tmpX, tmpRect.y + tmpY, destRect.w, destRect.h), 255);
+            }
+        }
+        delete tmp;
+        p->clearTaintedArea();
+        if (p->pixmanUseRegion32)
+        {
+            pixman_region32_copy(&p->tainted32, &originalTainted32);
+            pixman_region32_fini(&originalTainted32);
+        }
+        else
+        {
+            pixman_region_copy(&p->tainted, &originalTainted);
+            pixman_region_fini(&originalTainted);
+        }
+    }
+    else
+    {
+        Quad &quad = shState->gpQuad();
+        FloatRect rect(0, 0, width(), height());
+        quad.setTexPosRect(rect, rect);
+        
+        TEXFBO auxTex = shState->texPool().request(width(), height());
+        
+        BlurShader &shader = shState->shaders().blur;
+        BlurShader::HPass &pass1 = shader.pass1;
+        BlurShader::VPass &pass2 = shader.pass2;
+        
+        glState.blend.pushSet(false);
+        glState.viewport.pushSet(IntRect(0, 0, width(), height()));
+        
+        TEX::bind(p->gl.tex);
+        FBO::bind(auxTex.fbo);
+        
+        pass1.bind();
+        pass1.setTexSize(Vec2i(width(), height()));
+        pass1.applyViewportProj();
+        
+        quad.draw();
+        
+        TEX::bind(auxTex.tex);
+        p->bindFBO();
+        
+        pass2.bind();
+        pass2.setTexSize(Vec2i(width(), height()));
+        pass2.applyViewportProj();
+        
+        quad.draw();
+        
+        glState.viewport.pop();
+        glState.blend.pop();
+        
+        shState->texPool().release(auxTex);
+        
+        p->onModified();
+    }
 }
 
 void Bitmap::radialBlur(int angle, int divisions)
@@ -1605,39 +2547,52 @@ void Bitmap::clear()
 {
     guardDisposed();
     
-    GUARD_MEGA;
     GUARD_ANIMATED;
     
     if (hasHires()) {
         p->selfHires->clear();
     }
 
-    p->bindFBO();
-    
-    glState.clearColor.pushSet(Vec4());
-    
-    FBO::clear();
-    
-    glState.clearColor.pop();
+    if (p->megaSurface)
+    {
+        SDL_Rect fRect = rect();
+        SDL_FillRect(p->megaSurface, &fRect, 0);
+    }
+    else
+    {
+        p->bindFBO();
+        
+        glState.clearColor.pushSet(Vec4());
+        
+        FBO::clear();
+        
+        glState.clearColor.pop();
+    }
     
     p->clearTaintedArea();
     
     p->onModified();
 }
 
-static uint32_t &getPixelAt(SDL_Surface *surf, SDL_PixelFormat *form, int x, int y)
+void Bitmap::createSurface() const
 {
-    size_t offset = x*form->BytesPerPixel + y*surf->pitch;
-    uint8_t *bytes = (uint8_t*) surf->pixels + offset;
+    if (p->surface)
+        return;
+    p->allocSurface();
     
-    return *((uint32_t*) bytes);
+    p->bindFBO();
+    
+    glState.viewport.pushSet(IntRect(0, 0, width(), height()));
+    
+    gl.ReadPixels(0, 0, width(), height(), GL_RGBA, GL_UNSIGNED_BYTE, p->surface->pixels);
+    
+    glState.viewport.pop();
 }
 
 Color Bitmap::getPixel(int x, int y) const
 {
     guardDisposed();
     
-    GUARD_MEGA;
     GUARD_ANIMATED;
     
     if (hasHires()) {
@@ -1686,20 +2641,18 @@ Color Bitmap::getPixel(int x, int y) const
     if (x < 0 || y < 0 || x >= width() || y >= height())
         return Vec4();
 
-    if (!p->surface)
+    SDL_Surface *surf = nullptr;
+    if (p->megaSurface)
+        surf = p->megaSurface;
+    else if (p->surface)
+        surf = p->surface;
+    else
     {
-        p->allocSurface();
-        
-        FBO::bind(p->gl.fbo);
-        
-        glState.viewport.pushSet(IntRect(0, 0, width(), height()));
-        
-        gl.ReadPixels(0, 0, width(), height(), GL_RGBA, GL_UNSIGNED_BYTE, p->surface->pixels);
-        
-        glState.viewport.pop();
+        createSurface();
+        surf = p->surface;
     }
     
-    uint32_t pixel = getPixelAt(p->surface, p->format, x, y);
+    uint32_t pixel = getPixelAt(surf, p->format, x, y);
     
     return Color((pixel >> p->format->Rshift) & 0xFF,
                  (pixel >> p->format->Gshift) & 0xFF,
@@ -1711,7 +2664,6 @@ void Bitmap::setPixel(int x, int y, const Color &color)
 {
     guardDisposed();
     
-    GUARD_MEGA;
     GUARD_ANIMATED;
     
     if (hasHires()) {
@@ -1740,17 +2692,29 @@ void Bitmap::setPixel(int x, int y, const Color &color)
         (uint8_t) clamp<double>(color.alpha, 0, 255)
     };
     
-    TEX::bind(p->gl.tex);
-    TEX::uploadSubImage(x, y, 1, 1, &pixel, GL_RGBA);
+    if (!p->megaSurface)
+    {
+        TEX::bind(p->gl.tex);
+        TEX::uploadSubImage(x, y, 1, 1, &pixel, GL_RGBA);
+    }
     
     p->addTaintedArea(IntRect(x, y, 1, 1));
     
-    /* Setting just a single pixel is no reason to throw away the
-     * whole cached surface; we can just apply the same change */
-    
-    if (p->surface)
+    SDL_Surface *surf = nullptr;
+    if (p->megaSurface)
+        surf = p->megaSurface;
+    else
     {
-        uint32_t &surfPixel = getPixelAt(p->surface, p->format, x, y);
+        /* Setting just a single pixel is no reason to throw away the
+         * whole cached surface; we can just apply the same change */
+        
+        if (p->surface)
+            surf = p->surface;
+    }
+    
+    if (surf)
+    {
+        uint32_t &surfPixel = getPixelAt(surf, p->format, x, y);
         surfPixel = SDL_MapRGBA(p->format, pixel[0], pixel[1], pixel[2], pixel[3]);
     }
     
@@ -1782,8 +2746,6 @@ void Bitmap::replaceRaw(void *pixel_data, int size)
 {
     guardDisposed();
     
-    GUARD_MEGA;
-    
     if (hasHires()) {
         Debug() << "GAME BUG: Game is calling replaceRaw on low-res Bitmap; you may want to patch the game to improve graphics quality.";
     }
@@ -1795,8 +2757,17 @@ void Bitmap::replaceRaw(void *pixel_data, int size)
     if (size != w*h*4)
         throw Exception(Exception::MKXPError, "Replacement bitmap data is not large enough (given %i bytes, need %i)", size, requiredsize);
     
-    TEX::bind(getGLTypes().tex);
-    TEX::uploadImage(w, h, pixel_data, GL_RGBA);
+    if (p->megaSurface)
+    {
+        // This should always be true
+        if (p->megaSurface->format->BitsPerPixel == 32)
+            memcpy(p->megaSurface->pixels, pixel_data, w*h*4);
+    }
+    else
+    {
+        TEX::bind(getGLTypes().tex);
+        TEX::uploadImage(w, h, pixel_data, GL_RGBA);
+    }
     
     taintArea(IntRect(0,0,w,h));
     p->onModified();
@@ -1866,7 +2837,6 @@ void Bitmap::hueChange(int hue)
 {
     guardDisposed();
     
-    GUARD_MEGA;
     GUARD_ANIMATED;
     
     if (hasHires()) {
@@ -1877,31 +2847,82 @@ void Bitmap::hueChange(int hue)
     if ((hue % 360) == 0)
         return;
     
-    TEXFBO newTex = shState->texPool().request(width(), height());
-    
-    FloatRect texRect(rect());
-    
-    Quad &quad = shState->gpQuad();
-    quad.setTexPosRect(texRect, texRect);
-    quad.setColor(Vec4(1, 1, 1, 1));
-    
-    HueShader &shader = shState->shaders().hue;
-    shader.bind();
-    /* Shader expects normalized value */
-    shader.setHueAdjust(wrapRange(hue, 0, 359) / 360.0f);
-    
-    FBO::bind(newTex.fbo);
-    p->pushSetViewport(shader);
-    p->bindTexture(shader, false);
-    
-    p->blitQuad(quad);
-    
-    p->popViewport();
-    
-    TEX::unbind();
-    
-    shState->texPool().release(p->gl);
-    p->gl = newTex;
+    if (p->megaSurface)
+    {
+        int widthMult = ceil((float) width() / glState.caps.maxTexSize);
+        int tmpWidth = ceil((float) width() / widthMult);
+        int heightMult = ceil((float) height() / glState.caps.maxTexSize);
+        int tmpHeight = ceil((float) height() / heightMult);
+        
+        Bitmap *tmp = new Bitmap(tmpWidth, tmpHeight, true);
+        IntRect sourceRect = {0, 0, tmpWidth, tmpHeight};
+        
+        pixman_region16_t originalTainted;
+        pixman_region32_t originalTainted32;
+        if (p->pixmanUseRegion32)
+        {
+            pixman_region32_init(&originalTainted32);
+            pixman_region32_copy(&originalTainted32, &p->tainted32);
+        }
+        else
+        {
+            pixman_region_init(&originalTainted);
+            pixman_region_copy(&originalTainted, &p->tainted);
+        }
+        for (int i = 0; i < widthMult; i++)
+        {
+            for (int j = 0; j < heightMult; j++)
+            {
+                tmp->clear();
+                p->clearTaintedArea();
+                sourceRect.x = tmpWidth * i;
+                sourceRect.y = tmpHeight * j;
+                tmp->stretchBlt(tmp->rect(), *this, sourceRect, 255);
+                tmp->hueChange(hue);
+                stretchBlt(sourceRect, *tmp, tmp->rect(), 255);
+            }
+        }
+        delete tmp;
+        p->clearTaintedArea();
+        if (p->pixmanUseRegion32)
+        {
+            pixman_region32_copy(&p->tainted32, &originalTainted32);
+            pixman_region32_fini(&originalTainted32);
+        }
+        else
+        {
+            pixman_region_copy(&p->tainted, &originalTainted);
+            pixman_region_fini(&originalTainted);
+        }
+    }
+    else
+    {
+        TEXFBO newTex = shState->texPool().request(width(), height());
+        
+        FloatRect texRect(rect());
+        
+        Quad &quad = shState->gpQuad();
+        quad.setTexPosRect(texRect, texRect);
+        quad.setColor(Vec4(1, 1, 1, 1));
+        
+        HueShader &shader = shState->shaders().hue;
+        shader.bind();
+        /* Shader expects normalized value */
+        shader.setHueAdjust(wrapRange(hue, 0, 360) / 360.0f);
+        
+        FBO::bind(newTex.fbo);
+        p->pushSetViewport(shader);
+        p->bindTexture(shader, false);
+        
+        p->blitQuad(quad);
+        
+        p->popViewport();
+        
+        TEX::unbind();
+        
+        shState->texPool().release(p->gl);
+        p->gl = newTex;
+    }
     
     p->onModified();
 }
@@ -1928,10 +2949,10 @@ static std::string fixupString(const char *str)
     return s;
 }
 
-static void applyShadow(SDL_Surface *&in, const SDL_PixelFormat &fm, const SDL_Color &c)
+static void applyShadow(SDL_Surface *&in, const SDL_PixelFormat &fm, const SDL_Color &c, int offset)
 {
     SDL_Surface *out = SDL_CreateRGBSurface
-    (0, in->w+1, in->h+1, fm.BitsPerPixel, fm.Rmask, fm.Gmask, fm.Bmask, fm.Amask);
+    (0, in->w+offset, in->h+offset, fm.BitsPerPixel, fm.Rmask, fm.Gmask, fm.Bmask, fm.Amask);
     
     float fr = c.r / 255.0f;
     float fg = c.g / 255.0f;
@@ -1942,8 +2963,8 @@ static void applyShadow(SDL_Surface *&in, const SDL_PixelFormat &fm, const SDL_C
      * it with x/y offset by 1, then blend the input surface over it at origin
      * (0,0) using the bitmap blit equation (see shader/bitmapBlit.frag) */
     
-    for (int y = 0; y < in->h+1; ++y)
-        for (int x = 0; x < in->w+1; ++x)
+    for (int y = 0; y < in->h+offset; ++y)
+        for (int x = 0; x < in->w+offset; ++x)
         {
             /* src: input pixel, shd: shadow pixel */
             uint32_t src = 0, shd = 0;
@@ -1954,19 +2975,19 @@ static void applyShadow(SDL_Surface *&in, const SDL_PixelFormat &fm, const SDL_C
             if (y < in->h && x < in->w)
                 src = ((uint32_t*) ((uint8_t*) in->pixels + y*in->pitch))[x];
             
-            if (y > 0 && x > 0)
-                shd = ((uint32_t*) ((uint8_t*) in->pixels + (y-1)*in->pitch))[x-1];
+            if (y >= offset && x >= offset)
+                shd = ((uint32_t*) ((uint8_t*) in->pixels + (y-offset)*in->pitch))[x-offset];
             
             /* Set shadow pixel RGB values to 0 (black) */
             shd &= fm.Amask;
             
-            if (x == 0 || y == 0)
+            if (x < offset || y < offset)
             {
                 *outP = src;
                 continue;
             }
             
-            if (x == in->w || y == in->h)
+            if (x >= in->w || y >= in->h)
             {
                 *outP = shd;
                 continue;
@@ -2015,24 +3036,112 @@ static void applyShadow(SDL_Surface *&in, const SDL_PixelFormat &fm, const SDL_C
     in = out;
 }
 
+/* An implementation of the bitmap blit equation (see shader/bitmapBlit.frag),
+ * modified for combining text with its outline. */
+static inline void blendText(SDL_Surface *txtSrf, const SDL_Rect &inRect, const SDL_Color &inColor,
+                           SDL_Surface *outSrf, const SDL_Rect &outRect, const SDL_Color &outColor, bool hasShadow)
+{
+    size_t offset = (inRect.x * txtSrf->format->BytesPerPixel) + (inRect.y * txtSrf->pitch);
+    uint8_t *txtStart = (uint8_t*)txtSrf->pixels + offset;
+    offset = (outRect.x * outSrf->format->BytesPerPixel) + (outRect.y * outSrf->pitch);
+    uint8_t *outStart = (uint8_t*)outSrf->pixels + offset;
+    
+    // SDL_TTF sets every pixel to the same RGB value and just adjusts the alpha
+    float txtR = inColor.r;
+    float txtG = inColor.g;
+    float txtB = inColor.b;
+    float outR = outColor.r;
+    float outG = outColor.g;
+    float outB = outColor.b;
+    
+    /* SDL_ttf blends the glyphs together, which causes overlapping
+     * transparent pixels to get too opaque. RGSS probably does it, too,
+     * and you'd probably have to zoom in to see it, but if you do see it
+     * then it looks kind of ugly so we'll fix it.
+     * I don't know if it can actually happen for non-outline text,
+     * but we'll handle it, too, just in case.
+     * We don't do it for non-outline text if there's a shadow, because I'm not sure how to do this workaround with shadows. */
+    uint32_t fullTxtPixel = SDL_MapRGBA(outSrf->format, inColor.r, inColor.g, inColor.b, inColor.a);
+    uint32_t fullOutPixel = SDL_MapRGBA(outSrf->format, outColor.r, outColor.g, outColor.b, outColor.a);
+    
+    for (int i=0; i < inRect.h; ++i)
+    {
+        uint32_t *txtPixel = (uint32_t*)(txtStart + i*txtSrf->pitch);
+        uint32_t *outPixel = (uint32_t*)(outStart + i*outSrf->pitch);
+        for (int j=0; j < inRect.w; ++j)
+        {
+            uint8_t txtA = (*txtPixel >> txtSrf->format->Ashift) & 0xFF;
+            uint8_t outA = (*outPixel >> outSrf->format->Ashift) & 0xFF;
+            
+            if (txtA >= inColor.a)
+            {
+                if (hasShadow)
+                {
+                    *outPixel = *txtPixel;
+                }
+                else
+                {
+                    *outPixel = fullTxtPixel;
+                }
+            } else if (outA == 0) {
+                *outPixel = *txtPixel;
+            } else if (txtA != 0) {
+                /* Use the full text opacity instead of 255. */
+                int32_t co1 = (int)txtA * inColor.a;
+                int32_t co2 = (int)std::min(outA, outColor.a) * (inColor.a - txtA);
+                
+                /* Result alpha */
+                int32_t fa = co1 + co2;
+                
+                /* Result colors */
+                uint8_t r, g, b, a;
+                
+                float faInv = 1.0f / fa;
+                float co3 = co1 * faInv;
+                float co4 = co2 * faInv;
+
+                if (hasShadow)
+                {
+                    txtR = (*txtPixel >> txtSrf->format->Rshift) & 0xFF;
+                    txtG = (*txtPixel >> txtSrf->format->Gshift) & 0xFF;
+                    txtB = (*txtPixel >> txtSrf->format->Bshift) & 0xFF;
+                }
+
+                // Adding a small number to combat floating point errors.
+                r = std::min<int>((txtR * co3 + outR * co4) + 0.001f, 255);
+                g = std::min<int>((txtG * co3 + outG * co4) + 0.001f, 255);
+                b = std::min<int>((txtB * co3 + outB * co4) + 0.001f, 255);
+                
+                /* RGSS seems to not round, but our blit shader seemingly does. */
+                a = fa / inColor.a;
+                
+                *outPixel = SDL_MapRGBA(outSrf->format, r, g, b, a);
+            } else if (outA > outColor.a) {
+                /* SDL_ttf blends the glyphs together, which causes overlapping
+                 * transparent pixels to get too opaque. */
+                *outPixel = fullOutPixel;
+            }
+            
+            ++txtPixel;
+            ++outPixel;
+        }
+    }
+}
+
 void Bitmap::drawText(const IntRect &rect, const char *str, int align)
 {
     guardDisposed();
     
-    GUARD_MEGA;
     GUARD_ANIMATED;
     
+    // RGSS doesn't let you draw text backwards
+    if (rect.w <= 0 || rect.h <= 0 || rect.x >= width() || rect.y >= height() ||
+        rect.w < -rect.x || rect.h < -rect.y)
+        return;
+    
     if (hasHires()) {
-        Font &loresFont = getFont();
-        Font &hiresFont = p->selfHires->getFont();
-        // Disable the illegal font size check when creating a high-res font.
-        hiresFont.setSize(loresFont.getSize() * p->selfHires->width() / width(), false);
-        hiresFont.setBold(loresFont.getBold());
-        hiresFont.setColor(loresFont.getColor());
-        hiresFont.setItalic(loresFont.getItalic());
-        hiresFont.setShadow(loresFont.getShadow());
-        hiresFont.setOutline(loresFont.getOutline());
-        hiresFont.setOutColor(loresFont.getOutColor());
+        p->selfHires->guardDisposed();
+        p->selfHires->setFont(getFont());
 
         int rectX = rect.x * p->selfHires->width() / width();
         int rectY = rect.y * p->selfHires->height() / height();
@@ -2053,55 +3162,151 @@ void Bitmap::drawText(const IntRect &rect, const char *str, int align)
     if (str[0] == ' ' && str[1] == '\0')
         return;
     
-    TTF_Font *font = p->font->getSdlFont();
+    TTF_Font *sdlFont = p->font->getSdlFont(0);
     const Color &fontColor = p->font->getColor();
     const Color &outColor = p->font->getOutColor();
     
     SDL_Color c = fontColor.toSDLColor();
-    c.a = 255;
+    
+    if (c.a == 0)
+        return;
+    
+    // RGSS crops the the text slightly if there's an outline
+    int scaledOutlineSize = 0;
+    SDL_Color co;
+    if (p->font->getOutline()) {
+        // Handle high-res for outline.
+        if (p->selfLores) {
+            scaledOutlineSize = OUTLINE_SIZE * width() / p->selfLores->width();
+        } else {
+            scaledOutlineSize = OUTLINE_SIZE;
+        }
+        
+        /* RGSS's outline is drawn by blitting a complete set of text four times, offset diagonally.
+         * However, this looks very ugly in hires mode, so instead we'll fake the effect by
+         * precomputing the final outline and text colors. */
+        co = outColor.toSDLColor();
+
+        if (c.a != 255) {
+            Debug() << "BUG: Bitmap drawText with outline and translucent text is broken";
+        }
+
+        if (c.a != 255 || co.a != 255) {
+            /* Step 1: Compute the outline alpha by layering it onto itself */
+            uint8_t out_alpha = ((int)co.a * (int)c.a) / 255;
+            
+            int co1 = out_alpha * 255;
+            int co2 = out_alpha * (255 - out_alpha);
+            int fa = co1 + co2;
+            co.a = (fa + 1 + (fa >> 8)) >> 8;
+            /* Use this instead if we decide we want to round 
+             * RGSS seems to not round, but our blit shader seemingly does. */
+            //co.a = (fa + 128 + ((fa + 128) >> 8)) >> 8;
+            
+            if (c.a != 255) {
+                /* Step 2: Compute the opacity of the outline that would have been drawn behind the text.
+                 * In RGSS, there's a 1 pixel wide region at the edge of the text that only has
+                 * 2 layers of outline instead of the 4 layers that's behind most of the text,
+                 * which combined with the outlines having less opaque corners from how they're drawn
+                 * slightly affects the appearance of the text. We can't replicate this in a way that
+                 * looks nice in hires mode, however, this will have to be good enough. */
+                uint8_t out_alpha_full = co.a; // compute outline alpha - 4 layers
+                for (int i = 0; i < 2; ++i) {
+                    int co1 = out_alpha * 255;
+                    int co2 = out_alpha_full * (255 - out_alpha);
+                    int fa = co1 + co2;
+                    out_alpha_full = (fa + 1 + (fa >> 8)) >> 8;
+                    /* Use this instead if we decide we want to round 
+                     * RGSS seems to not round, but our blit shader seemingly does. */
+                    //out_alpha_full = (fa + 128 + ((fa + 128) >> 8)) >> 8;
+                }
+                
+                /* Step 3: Calculate the text color using out_alpha_full in place of co.a. */
+                int co1 = c.a * 255;
+                int co2 = out_alpha_full * (255 - c.a);
+                int fa = co1 + co2;
+                
+                float faInv = 1.0f / fa;
+                float co3 = co1 * faInv;
+                float co4 = co2 * faInv;
+                // Adding a small number to combat floating point errors.
+                c.r = std::min<int>((c.r * co3 + co.r * co4) + 0.001f, 255);
+                c.g = std::min<int>((c.g * co3 + co.g * co4) + 0.001f, 255);
+                c.b = std::min<int>((c.b * co3 + co.g * co4) + 0.001f, 255);
+                
+                c.a = (fa + 1 + (fa >> 8)) >> 8;
+                /* Use this instead if we decide we want to round 
+                 * RGSS seems to not round, but our blit shader seemingly does. */
+                //c.a = (fa + 128 + ((fa + 128) >> 8)) >> 8;
+            }
+        }
+    }
+    int doubleOutlineSize = scaledOutlineSize * 2;
+    
+    // Use the output of textSize to determine squeezing, since textSize tends to be used to determine
+    // rect dimensions.
+    // Also use it to determine position, because freetype sometimes treats the last character as
+    // being a pixel wider than it should be, and which textSize is currently set to compensate for.
+    int alignmentWidth, alignmentHeight;
+    {
+        const IntRect &text_size = textSize(str);
+        alignmentWidth = text_size.w;
+        alignmentHeight = text_size.h;
+        
+        if (!alignmentWidth)
+            return;
+    }
+    
+    // Trim the text to only fill double the rect width
+    int charLimit = 0;
+    float squeezeLimit = 0.5f;
+    if (TTF_MeasureUTF8(sdlFont, str, std::min(width() - rect.x, rect.w) / squeezeLimit, nullptr, &charLimit) == 0)
+    {
+        if (charLimit != fixed.size())
+        {
+            /* TTF_MeasureUTF8 returns the charLimit in codepoints, not bytes,
+             * so we have to calculate where that limit is ourselves.
+             * Grabbing a few codepoints past the limit in case the next
+             * character is a multi codepoint character.*/
+            charLimit += 4;
+            for(std::string::iterator it=fixed.begin(); it!=fixed.end() && *it != '\0'; ++it)
+            {
+                /* The first byte of a multibyte character starts with the first
+                 * two bits set to 11, with subsequent bytes starting with 10.
+                 * Single byte characters start with 0.*/
+                if ((*it & 0xC0) != 0x80)
+                {
+                    if (charLimit-- == 0)
+                    {
+                        *it = '\0';
+                        break;
+                    }
+                }
+            }
+        }
+    }
     
     SDL_Surface *txtSurf;
     
     if (p->font->isSolid())
-        txtSurf = TTF_RenderUTF8_Solid(font, str, c);
+        txtSurf = TTF_RenderUTF8_Solid(sdlFont, str, c);
     else
-        txtSurf = TTF_RenderUTF8_Blended(font, str, c);
+        txtSurf = TTF_RenderUTF8_Blended(sdlFont, str, c);
+    
+    if (!txtSurf)
+        throw Exception(Exception::SDLError, "Error creating text: %s",
+                        SDL_GetError());
     
     p->ensureFormat(txtSurf, SDL_PIXELFORMAT_ABGR8888);
     
-    int rawTxtSurfH = txtSurf->h;
-    
     if (p->font->getShadow())
-        applyShadow(txtSurf, *p->format, c);
-    
-    /* outline using TTF_Outline and blending it together with SDL_BlitSurface
-     * FIXME: outline is forced to have the same opacity as the font color */
-    if (p->font->getOutline())
     {
-        SDL_Color co = outColor.toSDLColor();
-        co.a = 255;
-        SDL_Surface *outline;
-        // Handle high-res for outline.
-        int scaledOutlineSize = OUTLINE_SIZE;
+        int scaledShadowSize = 1;
         if (p->selfLores) {
-            scaledOutlineSize = scaledOutlineSize * width() / p->selfLores->width();
+            scaledShadowSize = scaledShadowSize * width() / p->selfLores->width();
         }
-        /* set the next font render to render the outline */
-        TTF_SetFontOutline(font, scaledOutlineSize);
-        if (p->font->isSolid())
-            outline = TTF_RenderUTF8_Solid(font, str, co);
-        else
-            outline = TTF_RenderUTF8_Blended(font, str, co);
-        
-        p->ensureFormat(outline, SDL_PIXELFORMAT_ABGR8888);
-        SDL_Rect outRect = {scaledOutlineSize, scaledOutlineSize, txtSurf->w, txtSurf->h};
-        
-        SDL_SetSurfaceBlendMode(txtSurf, SDL_BLENDMODE_BLEND);
-        SDL_BlitSurface(txtSurf, NULL, outline, &outRect);
-        SDL_FreeSurface(txtSurf);
-        txtSurf = outline;
-        /* reset outline to 0 */
-        TTF_SetFontOutline(font, 0);
+
+        applyShadow(txtSurf, *p->format, c, scaledShadowSize);
     }
     
     int alignX = rect.x;
@@ -2113,38 +3318,88 @@ void Bitmap::drawText(const IntRect &rect, const char *str, int align)
             break;
             
         case Center :
-            alignX += (rect.w - txtSurf->w) / 2;
+            // Yes, half of the outline size.
+            alignX += (rect.w - (alignmentWidth + scaledOutlineSize)) / 2;
             break;
             
         case Right :
-            alignX += rect.w - txtSurf->w;
+            // I don't know why it's double the outline size, but it is.
+            alignX += rect.w - alignmentWidth - doubleOutlineSize;
             break;
     }
     
     if (alignX < rect.x)
         alignX = rect.x;
     
-    int alignY = rect.y + (rect.h - rawTxtSurfH) / 2;
+    int alignY = rect.y + ((rect.h - alignmentHeight) / 2) - scaledOutlineSize;
     
-    float squeeze = (float) rect.w / txtSurf->w;
+    alignY = std::max(alignY, rect.y);
     
-    if (squeeze > 1)
-        squeeze = 1;
+    /* FIXME: RGSS begins squeezing the text before it fills the rect.
+     * While this is extremely undesirable, a number of games will understandably
+     * have made the rects bigger to compensate, so we should probably match it */
+    float squeeze = (float) rect.w / alignmentWidth;
     
-    IntRect destRect(alignX, alignY, 0, 0);
-    destRect.w = std::min(rect.w, (int)(txtSurf->w * squeeze));
-    destRect.h = std::min(rect.h, txtSurf->h);
+    squeeze = clamp(squeeze, squeezeLimit, 1.0f);
+
+    if (scaledOutlineSize)
+    {
+        SDL_Surface *outline;
+        TTF_Font *sdlOutline;
+        try {
+            sdlOutline = p->font->getSdlFont(scaledOutlineSize);
+        } catch (const Exception &e) {
+            SDL_FreeSurface(txtSurf);
+            throw e;
+        }
+        if (p->font->isSolid())
+            outline = TTF_RenderUTF8_Solid(sdlOutline, str, co);
+        else
+            outline = TTF_RenderUTF8_Blended(sdlOutline, str, co);
+        
+        if (!outline) {
+            SDL_FreeSurface(txtSurf);
+            throw Exception(Exception::SDLError, "Error creating text outline: %s",
+                            SDL_GetError());
+        }
+        
+        p->ensureFormat(outline, SDL_PIXELFORMAT_ABGR8888);
+
+        // Enterbrain's runtime crops the top row and left column of the text
+        // when blitting it onto the outline. We allow the user to optionally
+        // disable this cropping, since it's arguably quite ugly.
+        int outlineCropUndo = shState->config().fontOutlineCrop ? 0 : scaledOutlineSize;
+
+        /* outline should always be at least doubleOutlineSize bigger than txtSurf,
+         * but we may as well validate it here anyway. */
+        SDL_Rect inRect = {scaledOutlineSize - outlineCropUndo, scaledOutlineSize - outlineCropUndo,
+                           std::min<int>({(int)(rect.w / squeeze) - doubleOutlineSize,
+                                          txtSurf->w - scaledOutlineSize,
+                                          outline->w - doubleOutlineSize
+                                         }) + outlineCropUndo,
+                           std::min<int>({rect.h - doubleOutlineSize,
+                                          txtSurf->h - scaledOutlineSize,
+                                          outline->h - doubleOutlineSize
+                                         }) + outlineCropUndo};
+        SDL_Rect outRect = {doubleOutlineSize - outlineCropUndo, doubleOutlineSize - outlineCropUndo, 0, 0};
+        
+        blendText(txtSurf, inRect, c, outline, outRect, co, p->font->getShadow());
+        SDL_FreeSurface(txtSurf);
+        txtSurf = outline;
+    }
+    
+    IntRect destRect(alignX, alignY,
+                    std::min(rect.w, (int)(txtSurf->w * squeeze)),
+                    std::min(rect.h, txtSurf->h));
     
     destRect.w = std::min(destRect.w, width() - destRect.x);
     destRect.h = std::min(destRect.h, height() - destRect.y);
     
-    IntRect sourceRect;
-    sourceRect.w = destRect.w / squeeze;
-    sourceRect.h = destRect.h;
+    IntRect sourceRect(scaledOutlineSize, scaledOutlineSize, destRect.w / squeeze, destRect.h);
     
     Bitmap txtBitmap(txtSurf, nullptr, true);
     bool smooth = squeeze != 1.0f;
-    stretchBlt(destRect, txtBitmap, sourceRect, fontColor.alpha, smooth);
+    stretchBlt(destRect, txtBitmap, sourceRect, 255, smooth);
 }
 
 /* http://www.lemoda.net/c/utf8-to-ucs2/index.html */
@@ -2195,19 +3450,25 @@ IntRect Bitmap::textSize(const char *str)
 {
     guardDisposed();
     
-    GUARD_MEGA;
     GUARD_ANIMATED;
     
     // TODO: High-res Bitmap textSize not implemented, but I think it's the same as low-res?
     // Need to double-check this.
 
-    TTF_Font *font = p->font->getSdlFont();
+    TTF_Font *sdlFont = p->font->getSdlFont(0);
     
-    std::string fixed = fixupString(str);
-    str = fixed.c_str();
+    // freetype sometimes treats the last character of the string as being
+    // a pixel wider than it should be. Adding a space at the end and then
+    // removing it's width should make character-by-character text
+    // more accurate.
+    std::string fixed = fixupString(str) + " ";
     
     int w, h;
-    TTF_SizeUTF8(font, str, &w, &h);
+    TTF_SizeUTF8(sdlFont, fixed.c_str(), &w, &h);
+    
+    int ws;
+    TTF_SizeUTF8(sdlFont, " ", &ws, 0);
+    w -= ws;
     
     /* If str is one character long, *endPtr == 0 */
     const char *endPtr;
@@ -2216,7 +3477,18 @@ IntRect Bitmap::textSize(const char *str)
     /* For cursive characters, returning the advance
      * as width yields better results */
     if (p->font->getItalic() && *endPtr == '\0')
-        TTF_GlyphMetrics(font, ucs2, 0, 0, 0, 0, &w);
+        TTF_GlyphMetrics(sdlFont, ucs2, 0, 0, 0, 0, &w);
+
+    if (shState->config().fontHeightReporting == 0) {
+        if(!w) {
+            h = 0;
+        } else {
+            /* RGSS normalizes the reported heights.
+             * Note that this may result in the bottoms
+             * of some characters being cut off. */
+             h = TTF_FontHeight(sdlFont);
+        }
+    }
     
     return IntRect(0, 0, w, h);
 }
@@ -2225,19 +3497,16 @@ DEF_ATTR_RD_SIMPLE(Bitmap, Font, Font&, *p->font)
 
 void Bitmap::setFont(Font &value)
 {
-    // High-res support handled in drawText, not here.
     *p->font = value;
 }
 
 void Bitmap::setInitFont(Font *value)
 {
-    if (hasHires()) {
-        Font *hiresFont = p->selfHires->p->font;
-        if (hiresFont && hiresFont != &shState->defaultFont())
-        {
-            // Disable the illegal font size check when creating a high-res font.
-            hiresFont->setSize(hiresFont->getSize() * p->selfHires->width() / width(), false);
-        }
+    if (value != &shState->defaultFont()) {
+        if (p->selfLores)
+            value->setHiresMult((float)width() / (float)p->selfLores->width());
+        else
+            value->setHiresMult(1.0f);
     }
 
     p->font = value;
@@ -2251,7 +3520,7 @@ TEXFBO &Bitmap::getGLTypes() const
 SDL_Surface *Bitmap::surface() const
 {
     if (hasHires()) {
-        Debug() << "BUG: High-res Bitmap surface not implemented";
+        Debug() << "BUG: Called surface() on low-res Bitmap; graphics quality will be degraded.";
     }
 
     return p->surface;
@@ -2260,12 +3529,7 @@ SDL_Surface *Bitmap::surface() const
 SDL_Surface *Bitmap::megaSurface() const
 {
     if (hasHires()) {
-        if (p->megaSurface) {
-            Debug() << "BUG: High-res Bitmap megaSurface not implemented (low-res has megaSurface)";
-        }
-        if (p->selfHires->megaSurface()) {
-            Debug() << "BUG: High-res Bitmap megaSurface not implemented (high-res has megaSurface)";
-        }
+        Debug() << "BUG: Called megaSurface() on low-res Bitmap; graphics quality will be degraded.";
     }
 
     return p->megaSurface;
@@ -2428,7 +3692,10 @@ int Bitmap::addFrame(Bitmap &source, int position)
         p->animation.frames.push_back(p->gl);
         
         if (p->surface)
+        {
             SDL_FreeSurface(p->surface);
+            p->surface = 0;
+        }
         p->gl = TEXFBO();
     }
     
@@ -2596,6 +3863,334 @@ bool Bitmap::getLooping() const
     return p->animation.loop;
 }
 
+void Bitmap::kglInvert()
+{
+    guardDisposed();
+    GUARD_ANIMATED;
+
+    if (hasHires()) {
+        p->selfHires->kglInvert();
+        return;
+    }
+
+    if (isMega()) {
+        for (size_t i = 0; i < (size_t)p->megaSurface->w * (size_t)p->megaSurface->h; ++i) {
+            for (size_t j = 0; j < 3; ++j) {
+                ((uint8_t *)p->megaSurface->pixels)[4 * i + j] = ~((uint8_t *)p->megaSurface->pixels)[4 * i + j];
+            }
+        }
+    } else {
+        TEXFBO newTex = shState->texPool().request(width(), height());
+
+        FloatRect texRect(rect());
+
+        Quad &quad = shState->gpQuad();
+        quad.setTexPosRect(texRect, texRect);
+        quad.setColor(Vec4(1, 1, 1, 1));
+
+        KglInvertShader &shader = shState->shaders().kglInvert;
+        shader.bind();
+
+        FBO::bind(newTex.fbo);
+        p->pushSetViewport(shader);
+        p->bindTexture(shader, false);
+
+        p->blitQuad(quad);
+
+        p->popViewport();
+
+        TEX::unbind();
+
+        shState->texPool().release(p->gl);
+        p->gl = newTex;
+    }
+
+    p->onModified();
+}
+
+void Bitmap::kglCompressAlpha()
+{
+    guardDisposed();
+    GUARD_ANIMATED;
+
+    if (hasHires()) {
+        p->selfHires->kglInvert();
+        return;
+    }
+
+    if (isMega()) {
+        for (size_t i = 0; i < (size_t)p->megaSurface->w * (size_t)p->megaSurface->h; ++i) {
+            for (size_t j = 0; j < 3; ++j) {
+                ((uint8_t *)p->megaSurface->pixels)[4 * i + j] =
+                    std::round(((float)((uint8_t *)p->megaSurface->pixels)[4 * i + 3] / 255.0f) * ((uint8_t *)p->megaSurface->pixels)[4 * i + j]);
+            }
+            ((uint8_t *)p->megaSurface->pixels)[4 * i + 3] = 0;
+        }
+    } else {
+        TEXFBO newTex = shState->texPool().request(width(), height());
+
+        FloatRect texRect(rect());
+
+        Quad &quad = shState->gpQuad();
+        quad.setTexPosRect(texRect, texRect);
+        quad.setColor(Vec4(1, 1, 1, 1));
+
+        KglCompressAlphaShader &shader = shState->shaders().kglCompressAlpha;
+        shader.bind();
+
+        FBO::bind(newTex.fbo);
+        p->pushSetViewport(shader);
+        p->bindTexture(shader, false);
+
+        p->blitQuad(quad);
+
+        p->popViewport();
+
+        TEX::unbind();
+
+        shState->texPool().release(p->gl);
+        p->gl = newTex;
+    }
+
+    p->onModified();
+}
+
+int Bitmap::kglShadowShaderH(int x1, int x2, int y, bool soft)
+{
+    guardDisposed();
+    GUARD_ANIMATED;
+
+    if (hasHires()) {
+        return p->selfHires->kglShadowShaderH(x1 * p->selfHires->width() / width(), x2 * p->selfHires->width() / width(), y * p->selfHires->height() / height(), soft);
+    }
+
+    int w = width();
+    int h = height();
+
+    if (y < 0 || y >= h || y == h / 2) {
+        return 111;
+    }
+
+    if (w <= 0 || h <= 0) {
+        return 1;
+    }
+
+    x1 = clamp(x1, 0, w - 1);
+    x2 = clamp(x2, 0, w - 1);
+
+    int x_center = w / 2;
+    int y_center = h / 2;
+
+    double slope1 = (double)(x1 - x_center) / (double)(y - y_center);
+    double slope2 = (double)(x2 - x_center) / (double)(y - y_center);
+
+    if (isMega()) {
+        uint32_t *shadowbuffer = (uint32_t *)p->megaSurface->pixels;
+
+        int y_start, y_end;
+        if (y < y_center) {
+            y_start = 0;
+            y_end = y - 1;
+        } else {
+            y_start = y;
+            y_end = h - 1;
+        }
+
+        for (int i = y_start; i <= y_end; ++i) {
+            double x_start_raw = std::round(slope1 * (double)(i - y_center) + (double)x_center);
+            double x_end_raw = std::round(slope2 * (double)(i - y_center) + (double)x_center + 0.2f); // The original shader contains a +0.2 adjustment factor for some reason
+
+            int x_start = (int)clamp(x_start_raw, 0., (double)w + 3.);
+            int x_end = (int)clamp(x_end_raw, -4., x2 < x_center ? (double)x2 - 1. : (double)w - 1.); // This bounds check is incorrect but is consistent with the original shader
+
+            if (x_start <= x_end) {
+                std::memset(
+                    shadowbuffer + (size_t)w * (size_t)i + (size_t)x_start,
+                    0,
+                    (size_t)4 * ((size_t)x_end - (size_t)x_start + (size_t)1)
+                );
+            }
+
+            if (soft) {
+                for (int j = 3; j >= 1; --j) {
+                    if (
+                        (x1 < x_center ? x_start - j < 0 : x_start - j < x1) // This bounds check is incorrect but is consistent with the original shader
+                            || (x2 < x_center ? x_start - j >= x2 : x_start - j >= w) // This bounds check is incorrect but is consistent with the original shader
+                    ) {
+                        continue;
+                    }
+                    uint32_t *pixel = shadowbuffer + (size_t)w * (size_t)i + (size_t)x_start - (size_t)j;
+                    for (size_t k = 0; k < 3; ++k) {
+                        ((uint8_t *)pixel)[k] = std::lround((double)((uint8_t *)pixel)[k] * ((double)j / (double)4));
+                    }
+                }
+
+                if (x2 != x_center) {
+                    for (int j = 1; j <= 3; ++j) {
+                        if (
+                            (x1 < x_center ? x_end < -j : x_end < x1 - j) // This bounds check is incorrect but is consistent with the original shader
+                                || (x2 < x_center ? x_end >= x2 - j : x_end >= w - j) // This bounds check is incorrect but is consistent with the original shader
+                        ) {
+                            continue;
+                        }
+                        uint32_t *pixel = shadowbuffer + (size_t)w * (size_t)i + (size_t)x_end + (size_t)j;
+                        for (size_t k = 0; k < 3; ++k) {
+                            ((uint8_t *)pixel)[k] = std::lround((double)((uint8_t *)pixel)[k] * ((double)j / (double)4));
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        TEXFBO newTex = shState->texPool().request(width(), height());
+
+        FloatRect texRect(rect());
+
+        Quad &quad = shState->gpQuad();
+        quad.setTexPosRect(texRect, texRect);
+        quad.setColor(Vec4(1, 1, 1, 1));
+
+        KglShadowShaderH &shader = shState->shaders().kglShadowH;
+        shader.bind();
+        shader.setParams(x1, x2, y, soft, w, h, x_center, y_center, slope1, slope2);
+
+        FBO::bind(newTex.fbo);
+        p->pushSetViewport(shader);
+        p->bindTexture(shader, false);
+
+        p->blitQuad(quad);
+
+        p->popViewport();
+
+        TEX::unbind();
+
+        shState->texPool().release(p->gl);
+        p->gl = newTex;
+    }
+
+    p->onModified();
+
+    return 1;
+}
+
+int Bitmap::kglShadowShaderV(int y1, int y2, int x, bool wall, bool soft)
+{
+    guardDisposed();
+    GUARD_ANIMATED;
+
+    if (hasHires()) {
+        return p->selfHires->kglShadowShaderV(y1 * p->selfHires->height() / height(), y2 * p->selfHires->height() / height(), x * p->selfHires->width() / width(), wall, soft);
+    }
+
+    int w = width();
+    int h = height();
+
+    if (x < 0 || x >= h || x == w / 2) {
+        return 111;
+    }
+
+    if (w <= 0 || h <= 0) {
+        return 1;
+    }
+
+    y1 = clamp(y1, 0, h - 1);
+    y2 = clamp(y2, 0, h - 1);
+
+    int x_center = w / 2;
+    int y_center = h / 2;
+
+    double slope1 = (double)(y1 - y_center) / (double)(x - x_center);
+    double slope2 = (double)(y2 - y_center) / (double)(x - x_center);
+
+    if (isMega()) {
+        uint32_t *shadowbuffer = (uint32_t *)p->megaSurface->pixels;
+
+        int x_start, x_end;
+        if (x < x_center) {
+            x_start = 0;
+            x_end = x - 1;
+        } else {
+            x_start = x;
+            x_end = w - 1;
+        }
+
+        for (int i = x_start; i <= x_end; ++i) {
+            double y_start_raw = std::round(slope1 * (double)(i - x_center) + (double)y_center);
+            double y_end_raw = std::round(slope2 * (double)(i - x_center) + (double)y_center + 0.2f); // The original shader contains a +0.2 adjustment factor for some reason
+
+            int y_start = wall && y1 >= y_center ? y1 : (int)clamp(y_start_raw, 0., (double)h + 3.);
+            int y_end = wall && y2 >= y_center ? y2 - 1 : (int)clamp(y_end_raw, -4., y2 < y_center ? (double)y2 - 1. : (double)h - 1.); // This bounds check is incorrect but is consistent with the original shader
+
+            if (y_start <= y_end) {
+                for (int j = y_start; j <= y_end; ++j) {
+                    shadowbuffer[(size_t)w * (size_t)j + (size_t)i] = 0;
+                }
+            }
+
+            if (soft) {
+                if (!wall || y1 < y_center) {
+                    for (int j = 3; j >= 1; --j) {
+                        if (
+                            (y1 < y_center ? y_start - j < 0 : y_start - j < y1) // This bounds check is incorrect but is consistent with the original shader
+                                || (y2 < y_center ? y_start - j >= y2 : y_start - j >= h) // This bounds check is incorrect but is consistent with the original shader
+                        ) {
+                            continue;
+                        }
+                        uint32_t *pixel = shadowbuffer + (size_t)w * ((size_t)y_start - (size_t)j) + (size_t)i;
+                        for (size_t k = 0; k < 3; ++k) {
+                            ((uint8_t *)pixel)[k] = std::lround((double)((uint8_t *)pixel)[k] * ((double)j / (double)4));
+                        }
+                    }
+                }
+
+                if (y2 != y_center && (!wall || y2 < y_center)) {
+                    for (int j = 1; j <= 3; ++j) {
+                        if (
+                            (y1 < y_center ? y_end < -j : y_end < y1 - j) // This bounds check is incorrect but is consistent with the original shader
+                                || (y2 < y_center ? y_end >= y2 - j : y_end >= h - j) // This bounds check is incorrect but is consistent with the original shader
+                        ) {
+                            continue;
+                        }
+                        uint32_t *pixel = shadowbuffer + (size_t)w * ((size_t)y_end + (size_t)j) + (size_t)i;
+                        for (size_t k = 0; k < 3; ++k) {
+                            ((uint8_t *)pixel)[k] = std::lround((double)((uint8_t *)pixel)[k] * ((double)j / (double)4));
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        TEXFBO newTex = shState->texPool().request(width(), height());
+
+        FloatRect texRect(rect());
+
+        Quad &quad = shState->gpQuad();
+        quad.setTexPosRect(texRect, texRect);
+        quad.setColor(Vec4(1, 1, 1, 1));
+
+        KglShadowShaderV &shader = shState->shaders().kglShadowV;
+        shader.bind();
+        shader.setParams(y1, y2, x, wall, soft, w, h, x_center, y_center, slope1, slope2);
+
+        FBO::bind(newTex.fbo);
+        p->pushSetViewport(shader);
+        p->bindTexture(shader, false);
+
+        p->blitQuad(quad);
+
+        p->popViewport();
+
+        TEX::unbind();
+
+        shState->texPool().release(p->gl);
+        p->gl = newTex;
+    }
+
+    p->onModified();
+
+    return 1;
+}
+
 void Bitmap::bindTex(ShaderBase &shader, bool substituteLoresSize)
 {
     // Hires mode is handled by p->bindTexture.
@@ -2635,6 +4230,8 @@ void Bitmap::releaseResources()
 
     if (p->megaSurface)
         SDL_FreeSurface(p->megaSurface);
+    if (p->surface)
+        SDL_FreeSurface(p->surface);
     else if (p->animation.enabled) {
         p->animation.enabled = false;
         p->animation.playing = false;
@@ -2643,6 +4240,11 @@ void Bitmap::releaseResources()
     }
     else
         shState->texPool().release(p->gl);
+    
+    if (p->pChild)
+    {
+        delete p->pChild;
+    }
     
     delete p;
 }

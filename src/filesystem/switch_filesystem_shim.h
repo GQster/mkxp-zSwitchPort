@@ -2,6 +2,7 @@
 #define SWITCH_FILESYSTEM_SHIM_H
 #ifdef __SWITCH__
 #include <sys/stat.h>
+#include <unistd.h>
 #include <errno.h>
 #ifndef AT_FDCWD
 #define AT_FDCWD (-100)
@@ -10,7 +11,14 @@
 #define AT_SYMLINK_NOFOLLOW 0x100
 #endif
 
-/* Stub unsupported POSIX functions */
+/* Stub unsupported POSIX functions. newlib declares some of these in
+ * gnu++ mode, so the stubs get their own names and these macros send calls
+ * to them. */
+#define symlink mkxpz_switch_symlink
+#define readlink mkxpz_switch_readlink
+#define utimensat mkxpz_switch_utimensat
+#define truncate mkxpz_switch_truncate
+
 static inline int symlink(const char *target, const char *linkpath) {
     (void)target; (void)linkpath;
     errno = ENOSYS;

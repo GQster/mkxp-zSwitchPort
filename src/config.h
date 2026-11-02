@@ -36,7 +36,7 @@ struct Config {
     
     bool debugMode;
     bool winConsole;
-    bool preferMetalRenderer;
+    int renderer;
     bool displayFPS;
     bool printFPS;
     
@@ -49,7 +49,7 @@ struct Config {
     int bitmapSmoothScalingDown;
     bool smoothScalingMipmaps;
     int bicubicSharpness;
-#ifdef MKXPZ_SSL
+#ifdef MKXPZ_HAVE_EXTRA_SHADERS
     double xbrzScalingFactor;
 #endif
     bool enableHires;
@@ -118,6 +118,11 @@ struct Config {
     std::vector<std::string> patches;
     
     std::vector<std::string> fontSubs;
+    float fontScale;
+    bool fontKerning;
+    int fontHinting;
+    int fontHeightReporting;
+    bool fontOutlineCrop;
     
     std::vector<std::string> rubyLoadpaths;
 
