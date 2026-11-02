@@ -280,14 +280,8 @@ inline ALenum chooseALFormat(int sampleSize, int channelCount)
 	case 4 :
 		switch (channelCount)
 		{
-		#if defined(__SWITCH__)
-			// Switch OpenAL does not support float buffers
-			case 1 : return AL_FORMAT_MONO16;
-			case 2 : return AL_FORMAT_STEREO16;
-		#else
-			case 1 : return AL_FORMAT_MONO_FLOAT32;
-			case 2 : return AL_FORMAT_STEREO_FLOAT32;
-		#endif
+		case 1 : return AL_FORMAT_MONO_FLOAT32;
+		case 2 : return AL_FORMAT_STEREO_FLOAT32;
 		}
 
 	default :
