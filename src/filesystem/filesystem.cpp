@@ -49,6 +49,12 @@
 #include <direct.h>
 #endif
 
+#ifdef __SWITCH__
+#include <dirent.h>
+#include <chrono>
+#include <unordered_set>
+#endif
+
 struct SDLRWIoContext {
   SDL_RWops *ops;
   std::string filename;
@@ -249,6 +255,7 @@ static const char *findExt(const char *filename) {
 static void initReadOps(PHYSFS_File *handle, SDL_RWops &ops, bool freeOnClose) {
 #ifdef __SWITCH__
   /* Unbuffered, every read is a filesystem service call. SDL_sound's Ogg
+    THIS FIXES LAG ON SWITCH. Was lagging when loading sound effects because
    * decoder (stb_vorbis) reads one byte at a time, which made loading even
    * a short sound effect block the game for one to two seconds. */
   PHYSFS_setBuffer(handle, 64 * 1024);
@@ -392,6 +399,33 @@ struct CacheEnumData {
   FileSystemPrivate *p;
   std::stack<std::vector<std::string> *> fileLists;
 
+#ifdef __SWITCH__
+  /* Entry types of the game folder, from one directory walk. On the Switch
+   * a PHYSFS_stat() costs several filesystem service calls (milliseconds),
+   * which for a game with ~20000 files kept the path cache busy for about a
+   * minute; readdir() already reports each entry's type. */
+  std::unordered_set<std::string> realDirs;
+  std::unordered_set<std::string> realFiles;
+
+  void scanRealDir(const std::string &dir) {
+    DIR *d = opendir(dir.empty() ? "." : dir.c_str());
+    if (!d)
+      return;
+    while (struct dirent *e = readdir(d)) {
+      if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
+        continue;
+      std::string path = dir.empty() ? e->d_name : dir + "/" + e->d_name;
+      if (e->d_type == DT_DIR) {
+        realDirs.insert(path);
+        scanRealDir(path);
+      } else {
+        realFiles.insert(path);
+      }
+    }
+    closedir(d);
+  }
+#endif
+
 #ifdef __APPLE__
   iconv_t nfd2nfc;
   char buf[512];
@@ -450,10 +484,21 @@ static PHYSFS_EnumerateCallbackResult cacheEnumCB(void *d, const char *origdir,
   std::string lowerCase = mixedCase;
   strTolower(lowerCase);
 
-  PHYSFS_Stat stat;
-  PHYSFS_stat(fullPath, &stat);
+  bool isDir;
+#ifdef __SWITCH__
+  if (data.realDirs.count(fullPath))
+    isDir = true;
+  else if (data.realFiles.count(fullPath))
+    isDir = false;
+  else
+#endif
+  {
+    PHYSFS_Stat stat;
+    PHYSFS_stat(fullPath, &stat);
+    isDir = stat.filetype == PHYSFS_FILETYPE_DIRECTORY;
+  }
 
-  if (stat.filetype == PHYSFS_FILETYPE_DIRECTORY) {
+  if (isDir) {
     /* Create a new list for this directory */
     std::vector<std::string> &list = data.p->fileLists[lowerCase];
 
@@ -482,11 +527,22 @@ void FileSystem::createPathCache() {
 
   CacheEnumData data(p);
   data.fileLists.push(&p->fileLists[""]);
+#ifdef __SWITCH__
+  auto start = std::chrono::steady_clock::now();
+  /* The game folder is the working directory, mounted at the root */
+  data.scanRealDir("");
+#endif
   PHYSFS_enumerate("", cacheEnumCB, &data);
 
   p->havePathCache = true;
 
+#ifdef __SWITCH__
+  long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - start).count();
+  Debug() << "Path cache completed:" << data.realFiles.size() << "files in" << ms << "ms";
+#else
   Debug() << "Path cache completed.";
+#endif
 }
 
 void FileSystem::reloadPathCache() {
