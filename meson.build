@@ -230,9 +230,7 @@ foreach install_tag : global_install_tags
         install_tag: install_tag,
     )
 
-    # The Switch's Ruby is our prebuilt libruby-static.a (declared in
-    # src/meson.build), not the vendored subproject
-    if ruby.type_name() == 'internal' and host_system != 'switch'
+    if ruby.type_name() == 'internal'
         meson.add_install_script(
             common.get_variable('install_directory'),
             ruby_build_dir / 'dist' / 'lib' / 'ruby' / (get_option('mri_version') + '.0'),

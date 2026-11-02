@@ -148,14 +148,6 @@ if host_system == 'switch'
         include_directories: include_directories(switch_portlibs / 'include/SDL2'),
         link_args: ['-L' + switch_portlibs / 'lib', '-lSDL2_image', '-ljpeg', '-lpng16', '-lwebp'],
     ))
-
-    meson.override_dependency('ruby-' + get_option('mri_version'), declare_dependency(
-        include_directories: include_directories(
-            '../libs/ruby-switch/include/ruby-' + get_option('mri_version') + '.0',
-            '../libs/ruby-switch/include/ruby-' + get_option('mri_version') + '.0/aarch64-elf',
-        ),
-        link_args: [switch_libs / 'ruby-switch/lib/libruby-static.a', '-lm', '-lpthread'],
-    ))
 endif
 
 gl = dependency('gl', allow_fallback: false, required: get_option('gl_system').disable_auto_if(default_system_disabled).enable_auto_if(default_system_enabled))
@@ -1196,7 +1188,16 @@ if host_system != 'switch'
 endif
 
 ruby = dependency('ruby-' + get_option('mri_version'), allow_fallback: false, required: get_option('ruby_system').disable_auto_if(default_system_disabled).enable_auto_if(default_system_enabled))
-if not ruby.found()
+if not ruby.found() and host_system == 'switch'
+    # Switch: no fiddle, so no libffi, and psych uses its bundled libyaml
+    ruby_options = meson_base_options + {
+        'cflags': run_command(quotetool, zlib_includes, check: true).stdout().strip(),
+        'cppflags': run_command(quotetool, zlib_includes, check: true).stdout().strip(),
+        'ldflags': run_command(quotetool, zlib_libs, check: true).stdout().strip(),
+    }
+    ruby = subproject('ruby-' + get_option('mri_version'), default_options: ruby_options).get_variable('ruby')
+    ruby_build_dir = subproject('ruby-' + get_option('mri_version'), default_options: ruby_options).get_variable('ruby_build_dir')
+elif not ruby.found()
     libffi = dependency('libffi', allow_fallback: false, method: 'pkg-config', required: get_option('libffi_system').disable_auto_if(default_system_disabled).enable_auto_if(default_system_enabled))
     if not libffi.found()
         libffi_options = meson_base_options

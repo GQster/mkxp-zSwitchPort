@@ -224,8 +224,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3-pip \
 # ──────────────────────────────────────────
 # 10. Bison (Switch Ruby)
 # ──────────────────────────────────────────
-# build_ruby_switch.sh builds Ruby from upstream mkxp-z's git tag tarball,
-# which has no pre-generated parse.c.
+# Ruby is built from subprojects/ruby-3.1.wrap's git tag tarball, which has
+# no pre-generated parse.c.
 RUN apt-get update && apt-get install -y --no-install-recommends bison \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 

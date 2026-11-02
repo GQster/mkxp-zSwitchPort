@@ -1237,15 +1237,12 @@ static void mriBindingExecute() {
     Config &conf = shState->rtData().config;
     
 #if RAPI_MAJOR >= 2
-#ifndef __SWITCH__
     /* Normally only a ruby executable would do a sysinit,
      * but not doing it will lead to crashes due to closed
      * stdio streams on some platforms (eg. Windows) */
     int argc = 0;
     char **argv = 0;
     ruby_sysinit(&argc, &argv);
-#else
-#endif
     
     SWITCH_TRACE("mriBindingExecute: before RUBY_INIT_STACK\n");
     RUBY_INIT_STACK;

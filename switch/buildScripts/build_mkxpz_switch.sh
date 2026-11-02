@@ -43,7 +43,6 @@ echo ""
 echo "🔍 Verifying custom libraries..."
 
 REQUIRED_LIBS=(
-    "${LIBS}/ruby-switch/lib/libruby-static.a"
     "${LIBS}/physfs-switch/lib/libphysfs.a"
     "${LIBS}/SDL_sound-switch/lib/libSDL2_sound.a"
     "${LIBS}/fluidsynth-switch/lib/libfluidsynth.a"
@@ -80,7 +79,9 @@ echo "🔧 Configuring mkxp-z for Nintendo Switch with Meson..."
 echo ""
 
 # default_system=enabled: take every dependency from portlibs or the
-# overrides in src/meson.build, never from a vendored subproject build.
+# overrides in src/meson.build, never from a vendored subproject build,
+# except Ruby (ruby_system=disabled), which is built from upstream's
+# subprojects/ruby-3.1.wrap.
 # b_staticpic=false: libmkxp-z.a would otherwise get -fPIC after the cross
 # file's -fPIE, and -fPIC with -mtp=soft triggers devkitA64's TLS miscompile
 # (switch/notes/round6-pixman/tls-audit.txt).
@@ -90,6 +91,7 @@ meson setup "${BUILD}" "${ROOT}" \
     -Dbuildtype=release \
     -Duse_miniffi=false \
     -Ddefault_system=enabled \
+    -Druby_system=disabled \
     -Dmri_version=3.1 \
     -Dopenssl=disabled \
     -Db_staticpic=false
