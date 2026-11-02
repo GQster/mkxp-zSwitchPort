@@ -137,6 +137,7 @@ static SDL_GLContext initGL(SDL_Window *win, Config &conf,
 #ifdef __SWITCH__
 extern "C" void switch_enable_logging();
 extern "C" void switch_boot_mark(const char *msg);
+extern "C" void switch_setup_openal_debug();
 extern "C" bool switch_pick_game(char *out, size_t outSize);
 extern "C" void switch_return_to_picker(const char *argv0);
 #define BOOT_MARK(msg) switch_boot_mark(msg)
@@ -348,12 +349,15 @@ int main(int argc, char *argv[]) {
     // No MiniFFI on Switch: Ruby stand-ins from RomFS (switch/romfs-root/
     // preload) run before the game's own preload scripts.
     conf.preloadScripts.insert(conf.preloadScripts.begin(), {
+        "romfs:/preload/log_sync.rb",
         "romfs:/preload/win32api_stub.rb",
         "romfs:/preload/win32_wrap.rb",
         // Shows "Loading <title>..." while the game's scripts load
         "romfs:/preload/loading_screen.rb",
         // Game Boy style Start/Select, B-to-run and ZL soft reset
         "romfs:/preload/switch_controls.rb",
+        // Debug tracing only: logs what each slow frame spent its time on
+        "romfs:/preload/perf_trace.rb",
     });
 #endif
 
@@ -546,6 +550,9 @@ int main(int argc, char *argv[]) {
     (void)setupWindowIcon;
 #endif
 
+#ifdef __SWITCH__
+    switch_setup_openal_debug();
+#endif
     ALCdevice *alcDev = alcOpenDevice(0);
 
     if (!alcDev) {

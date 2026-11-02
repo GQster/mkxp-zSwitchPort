@@ -13,6 +13,15 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <malloc.h>
+#include <stdlib.h>
+
+// Hidden by newlib under strict -std=c++14
+extern "C" int setenv(const char *name, const char *value, int overwrite);
+#include <SDL_timer.h>
+#include <SDL_audio.h>
+#include <AL/alc.h>
+#include <AL/alext.h>
 
 // Verbose SWITCH_TRACE output (src/util/switch-trace.h), on when this exists
 #define DEBUG_FLAG_FILE "sdmc:/switch/mkxp-z/debug.txt"
@@ -20,6 +29,10 @@
 // Written before main() so a crash in userAppInit()/the game picker still
 // leaves a breadcrumb on the SD card. Kept separate from mkxpz_log.txt.
 #define BOOT_LOG_FILE "sdmc:/mkxpz_boot.log"
+
+// Periodic memory, frame rate and audio samples (debug tracing only), written
+// from SDL's timer thread to their own file.
+#define MEM_LOG_FILE "sdmc:/mkxpz_mem.log"
 
 // Skips the CPU boost below when this exists
 #define NO_BOOST_FLAG_FILE "sdmc:/switch/mkxp-z/noboost.txt"
@@ -55,6 +68,23 @@ static int open_log_fd(const char *path, int flags) {
                  path, errno);
     boot_log(msg);
     return fd;
+}
+
+static const char *applet_type_name(AppletType t) {
+    switch (t) {
+    case AppletType_Application:       return "application (full memory)";
+    case AppletType_SystemApplication: return "system application";
+    case AppletType_LibraryApplet:     return "library applet (Album launch, limited memory)";
+    case AppletType_OverlayApplet:     return "overlay applet";
+    case AppletType_SystemApplet:      return "system applet";
+    default:                           return "unknown";
+    }
+}
+
+static u64 process_info(InfoType type) {
+    u64 value = 0;
+    svcGetInfo(&value, type, CUR_PROCESS_HANDLE, 0);
+    return value;
 }
 
 // CPU clock control: clkrst on 8.0.0+, pcv before that.
@@ -139,6 +169,93 @@ static void restore_cpu() {
     }
 }
 
+// Frame pacing, for the memory log: frames presented and the longest gap
+// between two frames since the last sample. Written by the RGSS thread
+// (via EventThread::notifyFrame), read by the log timer.
+static u64 frameCount;
+static u64 frameLastTick;
+static u64 frameMaxGap;
+
+extern "C" void switch_note_frame() {
+    u64 now = armGetSystemTick();
+    if (frameLastTick) {
+        u64 gap = now - frameLastTick;
+        if (gap > __atomic_load_n(&frameMaxGap, __ATOMIC_RELAXED))
+            __atomic_store_n(&frameMaxGap, gap, __ATOMIC_RELAXED);
+    }
+    frameLastTick = now;
+    __atomic_add_fetch(&frameCount, 1, __ATOMIC_RELAXED);
+}
+
+static u64 memLogStart;
+static u64 memLogPeak;
+static u64 memLogLastTick;
+
+// Logs elapsed time, memory use and audio state every few seconds, so a
+// hardware log shows whether a "stuck" game is still progressing, has run out
+// of memory, or has lost its audio output.
+static Uint32 log_memory(Uint32 interval, void *) {
+    // libnx maps all free memory as heap up front, so the kernel's
+    // used-memory figure is constant; malloc's own numbers are not.
+    struct mallinfo mi = mallinfo();
+    u64 used = (u64)mi.uordblks;
+    if (used > memLogPeak)
+        memLogPeak = used;
+    // Audio pipeline health: is OpenAL's device still connected and its
+    // mixer clock advancing, and what state is SDL's audio device in?
+    ALCint connected = -1;
+    long long clockMs = -1;
+    ALCcontext *ctx = alcGetCurrentContext();
+    ALCdevice *dev = ctx ? alcGetContextsDevice(ctx) : NULL;
+    if (dev) {
+        alcGetIntegerv(dev, ALC_CONNECTED, 1, &connected);
+        LPALCGETINTEGER64VSOFT getInt64 =
+            (LPALCGETINTEGER64VSOFT)alcGetProcAddress(dev, "alcGetInteger64vSOFT");
+        ALCint64SOFT clock = 0;
+        if (getInt64) {
+            getInt64(dev, ALC_DEVICE_CLOCK_SOFT, 1, &clock);
+            clockMs = (long long)(clock / 1000000);
+        }
+    }
+    u64 now = armGetSystemTick();
+    u64 frames = __atomic_exchange_n(&frameCount, 0, __ATOMIC_RELAXED);
+    u64 maxGap = __atomic_exchange_n(&frameMaxGap, 0, __ATOMIC_RELAXED);
+    u64 sinceLastMs = armTicksToNs(now - memLogLastTick) / 1000000ULL;
+    memLogLastTick = now;
+    char line[256];
+    int len = snprintf(line, sizeof(line),
+                       "t=%llus fps=%.1f worst_frame=%llums cpu=%uMHz"
+                       " malloc used=%lluMB peak=%lluMB heap=%lluMB"
+                       " al_connected=%d al_clock=%lldms sdl_audio=%d,%d,%d\n",
+                       (unsigned long long)(armTicksToNs(now - memLogStart) / 1000000000ULL),
+                       sinceLastMs ? frames * 1000.0 / sinceLastMs : 0.0,
+                       (unsigned long long)(armTicksToNs(maxGap) / 1000000ULL),
+                       get_cpu_clock() / 1000000,
+                       (unsigned long long)(used >> 20), (unsigned long long)(memLogPeak >> 20),
+                       (unsigned long long)((u64)mi.arena >> 20), connected, clockMs,
+                       SDL_GetAudioDeviceStatus(1), SDL_GetAudioDeviceStatus(2),
+                       SDL_GetAudioDeviceStatus(3));
+    int fd = open(MEM_LOG_FILE, O_WRONLY | O_CREAT | O_APPEND, 0666);
+    if (fd >= 0) {
+        write(fd, line, len);
+        close(fd);
+    }
+    return interval;
+}
+
+static void log_launch_environment() {
+    printf("launch: applet type = %s\n", applet_type_name(appletGetAppletType()));
+    printf("launch: memory total=%lluMB used=%lluMB\n",
+           (unsigned long long)(process_info(InfoType_TotalMemorySize) >> 20),
+           (unsigned long long)(process_info(InfoType_UsedMemorySize) >> 20));
+
+    if (switch_trace_enabled) {
+        close(open(MEM_LOG_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0666));
+        memLogStart = memLogLastTick = armGetSystemTick();
+        SDL_AddTimer(5000, log_memory, NULL);
+    }
+}
+
 // Helper to redirect stdout/stderr to a file on the SD card
 void setup_file_logging() {
     // O_TRUNC clears the file every time you launch the app.
@@ -170,6 +287,7 @@ void setup_file_logging() {
         switch_trace_enabled = stat(DEBUG_FLAG_FILE, &st) == 0;
         printf("--- MKXP-Z Switch Log Start ---%s\n",
                switch_trace_enabled ? " (debug tracing on)" : "");
+        log_launch_environment();
     }
 }
 
@@ -217,6 +335,30 @@ void userAppExit(void) {
 }
 
 } // extern "C"
+
+// Called before alcOpenDevice(). With debug tracing on, OpenAL Soft logs its
+// warnings (underruns, backend errors) to stderr, i.e. mkxpz_log.txt. If
+// sdmc:/switch/mkxp-z/alwave.txt also exists, OpenAL mixes into
+// sdmc:/mkxpz_al.wav instead of the speakers, to tell mixer problems apart
+// from SDL/audren output problems.
+extern "C" void switch_setup_openal_debug() {
+    if (!switch_trace_enabled)
+        return;
+    setenv("ALSOFT_LOGLEVEL", "3", 1);
+
+    struct stat st;
+    if (stat("sdmc:/switch/mkxp-z/alwave.txt", &st) != 0)
+        return;
+    const char *conf = "sdmc:/switch/mkxp-z/alsoft_wave.conf";
+    FILE *f = fopen(conf, "w");
+    if (!f)
+        return;
+    fputs("[general]\ndrivers = wave\n[wave]\nfile = sdmc:/mkxpz_al.wav\n", f);
+    fclose(f);
+    setenv("ALSOFT_CONF", conf, 1);
+    setenv("ALSOFT_DRIVERS", "wave", 1);
+    printf("openal: wave backend -> sdmc:/mkxpz_al.wav\n");
+}
 
 // Breadcrumb hook for src/main.cpp (picker and early startup stages).
 extern "C" void switch_boot_mark(const char *msg) {

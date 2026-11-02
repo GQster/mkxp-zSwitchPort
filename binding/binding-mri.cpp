@@ -66,6 +66,7 @@ extern "C" {
 #include <SDL_filesystem.h>
 #include <SDL_loadso.h>
 #include <SDL_power.h>
+#include <SDL_timer.h>
 
 extern const char module_rpg1[];
 extern const char module_rpg2[];
@@ -975,6 +976,10 @@ bool evalScript(VALUE string, const char *filename)
 static void runRMXPScripts(BacktraceData &btData) {
     const Config &conf = shState->rtData().config;
     const std::string &scriptPack = conf.game.scripts;
+#ifdef __SWITCH__
+    /* Debug tracing: where startup time goes before the game's Main script */
+    Uint32 traceStart = SDL_GetTicks();
+#endif
     
     if (scriptPack.empty()) {
         showMsg("No script file has been specified. Check the game's INI and try again.");
@@ -1053,6 +1058,9 @@ static void runRMXPScripts(BacktraceData &btData) {
         rb_ary_store(script, 3, rb_utf8_str_new_cstr(decodeBuffer.c_str()));
     }
     
+    SWITCH_TRACE("startup: %ld scripts read and decompressed in %u ms\n",
+                 scriptCount, SDL_GetTicks() - traceStart);
+
     /* Execute preloaded scripts */
     for (std::vector<std::string>::const_iterator i = conf.preloadScripts.begin();
          i != conf.preloadScripts.end(); ++i)
@@ -1116,7 +1124,18 @@ static void runRMXPScripts(BacktraceData &btData) {
             
             int state;
             
+#ifdef __SWITCH__
+            if (i == scriptCount - 1)
+                SWITCH_TRACE("startup: %ld script sections ran in %u ms, starting %s\n",
+                             scriptCount - 1, SDL_GetTicks() - traceStart, buf);
+            Uint32 sectionStart = SDL_GetTicks();
+#endif
             evalString(string, fname, &state);
+#ifdef __SWITCH__
+            if (SDL_GetTicks() - sectionStart >= 50 && i < scriptCount - 1)
+                SWITCH_TRACE("startup: script %s took %u ms\n", buf,
+                             SDL_GetTicks() - sectionStart);
+#endif
             if (state)
                 break;
         }

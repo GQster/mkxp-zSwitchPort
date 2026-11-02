@@ -894,8 +894,15 @@ SDL_GameController *EventThread::controller() const
     return ctrl;
 }
 
+#ifdef __SWITCH__
+extern "C" void switch_note_frame();
+#endif
+
 void EventThread::notifyFrame()
 {
+#ifdef __SWITCH__
+    switch_note_frame();
+#endif
 #ifdef MKXPZ_BUILD_XCODE
     uint32_t frames = round(shState->graphics().averageFrameRate());
     updateTouchBarFPSDisplay(frames);
