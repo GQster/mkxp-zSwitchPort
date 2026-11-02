@@ -90,7 +90,7 @@ meson setup "${BUILD}" "${ROOT}" \
     -Dbuildtype=release \
     -Duse_miniffi=false \
     -Ddefault_system=enabled \
-    -Dmri_version=3.2 \
+    -Dmri_version=3.1 \
     -Dopenssl=disabled \
     -Db_staticpic=false
 

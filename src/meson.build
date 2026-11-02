@@ -151,8 +151,8 @@ if host_system == 'switch'
 
     meson.override_dependency('ruby-' + get_option('mri_version'), declare_dependency(
         include_directories: include_directories(
-            '../libs/ruby-switch/include/ruby-3.2.0',
-            '../libs/ruby-switch/include/ruby-3.2.0/aarch64-elf',
+            '../libs/ruby-switch/include/ruby-' + get_option('mri_version') + '.0',
+            '../libs/ruby-switch/include/ruby-' + get_option('mri_version') + '.0/aarch64-elf',
         ),
         link_args: [switch_libs / 'ruby-switch/lib/libruby-static.a', '-lm', '-lpthread'],
     ))

@@ -63,10 +63,12 @@ switch/buildScripts/docker_build.sh shell   # interactive shell in /workspace
 | Step | Script | Output |
 |------|--------|--------|
 | `deps` | `configure_mkxpz.sh` | `libs/physfs-switch`, `libs/SDL_sound-switch`, `libs/fluidsynth-switch` |
-| `ruby` | `build_ruby_switch.sh` | `libs/ruby-switch` (Ruby 3.2.2, static) |
+| `ruby` | `build_ruby_switch.sh` | `libs/ruby-switch` (Ruby 3.1.3, static) |
 | `mkxpz` | `build_mkxpz_switch.sh` | `build-switch/mkxp-z.nro` |
 
-The Ruby build is incremental: it reuses the configured `ruby-3.2.2/` tree.
+The Ruby build is incremental: it reuses the configured `ruby-3.1.3/` tree.
+The source, patches and pre-generated `configure` are upstream mkxp-z's, from
+`subprojects/ruby-3.1.wrap` and `subprojects/packagefiles/ruby-3.1/`.
 Run `RUBY_CLEAN=1 switch/buildScripts/docker_build.sh ruby` after changing
 `build_ruby_switch.sh` (its configure options and source patches only apply
 to a fresh tree).
@@ -102,7 +104,7 @@ mkxp-z-switch/
    └─ SDL_sound-switch/
        └─ lib/libSDL2_sound.a
 └─ physfs-build/
-└─ ruby-3.2.2/
+└─ ruby-3.1.3/
 └─ SDL_sound-build/
 └─ <everything else from the repo>/
 

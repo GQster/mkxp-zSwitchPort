@@ -2,11 +2,14 @@
 set -e
 
 # ══════════════════════════════════════════════════════════════
-# Build Ruby 3.2.2 for Nintendo Switch
+# Build Ruby 3.1.3 for Nintendo Switch
 # ══════════════════════════════════════════════════════════════
+# Same Ruby as upstream mkxp-z: the source, patches and pre-generated
+# configure come from subprojects/ruby-3.1.wrap and
+# subprojects/packagefiles/ruby-3.1, applied as Meson would.
 
 echo "════════════════════════════════════════════════════════════"
-echo "  Building Ruby 3.2.2 for Nintendo Switch"
+echo "  Building Ruby 3.1.3 for Nintendo Switch"
 echo "════════════════════════════════════════════════════════════"
 
 # 1. Setup Paths
@@ -14,8 +17,12 @@ export DEVKITPRO=/opt/devkitpro
 export DEVKITARM=${DEVKITPRO}/devkitA64
 export TOPdir=/workspace
 export INSTALL_DIR=${TOPdir}/libs/ruby-switch
-export RUBY_VER=3.2.2
+export RUBY_VER=3.1.3
+export RUBY_API=3.1.0
 export RUBY_SRC=${TOPdir}/ruby-${RUBY_VER}
+RUBY_WRAP=${TOPdir}/subprojects/ruby-3.1.wrap
+RUBY_PACKAGEFILES=${TOPdir}/subprojects/packagefiles
+RUBY_TARBALL=${TOPdir}/$(sed -n 's/^source_filename = //p' "${RUBY_WRAP}")
 
 echo ""
 echo "Configuration:"
@@ -42,13 +49,27 @@ mkdir -p "${INSTALL_DIR}"
 # 3. Download and Extract fresh
 cd ${TOPdir}
 if [ "${FRESH}" = "1" ]; then
-    if [ ! -f "${TOPdir}/ruby-${RUBY_VER}.tar.gz" ]; then
+    if [ ! -f "${RUBY_TARBALL}" ]; then
         echo ">>> Downloading Ruby ${RUBY_VER}..."
-        wget https://cache.ruby-lang.org/pub/ruby/3.2/ruby-${RUBY_VER}.tar.gz -O "${TOPdir}/ruby-${RUBY_VER}.tar.gz"
+        wget "$(sed -n 's/^source_url = //p' "${RUBY_WRAP}")" -O "${RUBY_TARBALL}"
     fi
+    echo "$(sed -n 's/^source_hash = //p' "${RUBY_WRAP}")  ${RUBY_TARBALL}" | sha256sum -c -
 
     echo ">>> Extracting Ruby ${RUBY_VER}..."
-    tar -xf "${TOPdir}/ruby-${RUBY_VER}.tar.gz" -C "${TOPdir}"
+    mkdir -p "${RUBY_SRC}"
+    tar -xf "${RUBY_TARBALL}" -C "${RUBY_SRC}" --strip-components=1
+
+    # Upstream's patch_directory, then its diff_files in wrap order. The fake
+    # patch is skipped: it only fixes Windows hosts, and it breaks in-tree
+    # builds like this one (fake.rb looks for tool/fake.rb under each ext/ dir).
+    echo ">>> Applying upstream mkxp-z Ruby patches..."
+    cp -r "${RUBY_PACKAGEFILES}/ruby-3.1/configure" "${RUBY_PACKAGEFILES}/ruby-3.1/tool" \
+          "${RUBY_PACKAGEFILES}/ruby-3.1/gems" "${RUBY_SRC}/"
+    for P in $(sed -n '/^diff_files =/,/end-of-diff-files/p' "${RUBY_WRAP}" | grep -o 'ruby-3\.1-[A-Za-z0-9_-]*\.patch'); do
+        [ "${P}" = "ruby-3.1-fake.patch" ] && continue
+        echo "    → ${P}"
+        patch -d "${RUBY_SRC}" -p1 -s < "${RUBY_PACKAGEFILES}/${P}"
+    done
 fi
 cd ${RUBY_SRC}
 
@@ -61,7 +82,8 @@ INCS="-I${DEVKITPRO}/libnx/include -I${DEVKITPRO}/portlibs/switch/include"
 export PATH=${DEVKITARM}/bin:$PATH
 
 # NO -specs here! specs is only for final executable linking
-export CC="aarch64-none-elf-gcc ${FLAGS} ${INCS}"
+# Ruby 3.1 is not valid C23 (GCC's default); upstream mkxp-z uses gnu11
+export CC="aarch64-none-elf-gcc -std=gnu11 ${FLAGS} ${INCS}"
 export CXX="aarch64-none-elf-g++ ${FLAGS} ${INCS}"
 export LD="aarch64-none-elf-ld"
 export AR="aarch64-none-elf-ar"
@@ -72,7 +94,7 @@ export OBJDUMP="aarch64-none-elf-objdump"
 export NM="aarch64-none-elf-nm"
 export AS="aarch64-none-elf-as"
 # Use gcc for shared linking to handle -Wl options correctly
-export LDSHARED="aarch64-none-elf-gcc -shared ${FLAGS} ${INCS}"
+export LDSHARED="aarch64-none-elf-gcc -std=gnu11 -shared ${FLAGS} ${INCS}"
 
 # Create switch_shim.h with constants
 cat > switch_shim.h <<'EOF'
@@ -360,7 +382,10 @@ rm -rf ext/-test-
 
 # 5. Configure
 echo ">>> Configuring Ruby..."
-./configure \
+# The YACC, baseruby, rubygems and __builtin_setjmp settings match upstream's
+# subprojects/packagefiles/ruby-3.1/meson.build.
+# ac_cv_prog_cc_c23=no keeps configure from appending -std=gnu23 to CC.
+CONFIG_SITE=' ' ./configure \
     --host=aarch64-none-elf \
     --target=aarch64-none-elf \
     --build=x86_64-pc-linux-gnu \
@@ -368,7 +393,9 @@ echo ">>> Configuring Ruby..."
     --disable-install-doc \
     --disable-install-rdoc \
     --disable-install-capi \
-    --disable-jit \
+    --disable-jit-support \
+    --disable-rubygems \
+    --with-baseruby="$(command -v ruby)" \
     --disable-shared \
     --enable-static \
     --with-compress-debug-sections=none \
@@ -376,6 +403,9 @@ echo ">>> Configuring Ruby..."
     --with-static-linked-ext \
     --disable-close-fds-by-recvmsg-with-peek \
     --with-out-ext=openssl,readline,dbm,gdbm,pty,syslog,fiddle,bigdecimal,-test- \
+    YACC=bison \
+    ac_cv_prog_cc_c23=no \
+    ac_cv_func___builtin_setjmp=no \
     ac_cv_func_fork=no \
     ac_cv_func_mmap=no \
     ac_cv_func_mprotect=no \
@@ -548,15 +578,15 @@ patch('#if defined HAVE_PTHREAD_GETATTR_NP || defined HAVE_PTHREAD_ATTR_GET_NP\n
       '#if defined __SWITCH__\n#define STACKADDR_AVAILABLE 1\nint rb_switch_get_stack(void **addr, size_t *size);\n'
       '#elif defined HAVE_PTHREAD_GETATTR_NP || defined HAVE_PTHREAD_ATTR_GET_NP\n#define STACKADDR_AVAILABLE 1\n')
 patch('#ifdef HAVE_PTHREAD_GETATTR_NP /* Linux */\n    pthread_attr_t attr;\n    size_t guard = 0;',
-      '#if defined __SWITCH__ /* libnx */\n    STACK_GROW_DIR_DETECTION;\n'
+      '#if defined __SWITCH__ /* libnx */\n'
       '    if (rb_switch_get_stack(addr, size) != 0) return ENOSYS;\n'
       '    STACK_DIR_UPPER((void)0, (void)(*addr = (char *)*addr + *size));\n'
       '#elif defined HAVE_PTHREAD_GETATTR_NP /* Linux */\n    pthread_attr_t attr;\n    size_t guard = 0;')
 # newlib has no PTHREAD_STACK_MIN, so Ruby would skip setting the stack size
 # and libnx would use its small default, which the per-thread VM stack
 # (alloca'd in thread_start_func_2) overflows.
-patch('# ifdef PTHREAD_STACK_MIN\n        RUBY_DEBUG_LOG("stack size: %lu", (unsigned long)stack_size);',
-      '# if defined PTHREAD_STACK_MIN || defined __SWITCH__\n        RUBY_DEBUG_LOG("stack size: %lu", (unsigned long)stack_size);')
+patch('# ifdef PTHREAD_STACK_MIN\n\tthread_debug("create - stack size: %lu\\n", (unsigned long)stack_size);',
+      '# if defined PTHREAD_STACK_MIN || defined __SWITCH__\n\tthread_debug("create - stack size: %lu\\n", (unsigned long)stack_size);')
 # The main thread sleeps in ppoll() on the timer self-pipe. libnx has no pipe
 # ("pipe creation failed for timer"), so that ppoll waits on fd -1 forever and
 # Thread#join/sleep/Queue#pop on the main thread never return. Without the
@@ -568,6 +598,27 @@ patch('    else if (th == th->vm->ractor.main_thread) { /* always able to handle
 with open('thread_pthread.c', 'w') as f:
     f.write(content)
 print("    ✓ get_stack() implemented for libnx")
+PYTHON_EOF
+
+# devkitA64 miscompiles -fPIC soft-TLS accesses (bl __aarch64_read_tp; lsl
+# instead of add; see DEPLOY_LOG.md round 6). FLAGS has
+# -DRB_THREAD_LOCAL_SPECIFIER_IS_UNSUPPORTED so ruby_current_ec goes through
+# pthread_getspecific, but only Ruby 3.2+ checks that macro. Backport the check.
+echo "    → Patching thread_pthread.h (honor RB_THREAD_LOCAL_SPECIFIER_IS_UNSUPPORTED)"
+python3 << 'PYTHON_EOF'
+with open('thread_pthread.h') as f:
+    content = f.read()
+old = ('#if __STDC_VERSION__ >= 201112\n'
+       '  #define RB_THREAD_LOCAL_SPECIFIER _Thread_local\n'
+       '#elif defined(__GNUC__)\n')
+assert content.count(old) == 1
+content = content.replace(old,
+       '#if !defined(RB_THREAD_LOCAL_SPECIFIER_IS_UNSUPPORTED) && __STDC_VERSION__ >= 201112\n'
+       '  #define RB_THREAD_LOCAL_SPECIFIER _Thread_local\n'
+       '#elif !defined(RB_THREAD_LOCAL_SPECIFIER_IS_UNSUPPORTED) && defined(__GNUC__)\n')
+with open('thread_pthread.h', 'w') as f:
+    f.write(content)
+print("    ✓ ruby_current_ec uses pthread keys")
 PYTHON_EOF
 
 # The BSD socket API is in libnx, and mkmf's link tests only link against it
@@ -694,9 +745,8 @@ ${RANLIB} "${INSTALL_DIR}/lib/libruby-static.a"
 
 # 8. Install Headers (Manual copy if make install failed)
 echo ">>> Installing headers..."
-mkdir -p "${INSTALL_DIR}/include/ruby-3.2.0"
-# Try make install (will partially fail, that's OK)
-make install 2>&1 | tee install.log || true
+mkdir -p "${INSTALL_DIR}/include/ruby-${RUBY_API}"
+# No second make install here: it would replace the repacked archive above
 
 # Ensure library is there
 if [ ! -f "${INSTALL_DIR}/lib/libruby-static.a" ]; then
@@ -709,29 +759,29 @@ fi
 echo "    → Ensuring all headers are installed..."
 
 # Ruby puts headers in .ext/include during build
-if [ -d ".ext/include/ruby-3.2.0" ]; then
-    echo "    → Copying from .ext/include/ruby-3.2.0/"
+if [ -d ".ext/include/ruby-${RUBY_API}" ]; then
+    echo "    → Copying from .ext/include/ruby-${RUBY_API}/"
     mkdir -p "${INSTALL_DIR}/include"
-    cp -r .ext/include/ruby-3.2.0 "${INSTALL_DIR}/include/" 2>/dev/null || true
+    cp -r .ext/include/ruby-${RUBY_API} "${INSTALL_DIR}/include/" 2>/dev/null || true
 fi
 
 # Also need the main include/ directory for additional headers
 if [ -d "include" ]; then
     echo "    → Merging from source include/"
     # Copy top-level headers
-    cp -r include/*.h "${INSTALL_DIR}/include/ruby-3.2.0/" 2>/dev/null || true
+    cp -r include/*.h "${INSTALL_DIR}/include/ruby-${RUBY_API}/" 2>/dev/null || true
     
     # Copy ruby/ subdirectory if it exists
     if [ -d "include/ruby" ]; then
-        mkdir -p "${INSTALL_DIR}/include/ruby-3.2.0/ruby"
-        cp -r include/ruby/* "${INSTALL_DIR}/include/ruby-3.2.0/ruby/" 2>/dev/null || true
+        mkdir -p "${INSTALL_DIR}/include/ruby-${RUBY_API}/ruby"
+        cp -r include/ruby/* "${INSTALL_DIR}/include/ruby-${RUBY_API}/ruby/" 2>/dev/null || true
     fi
 fi
 
 # Architecture-specific headers
 if [ -d ".ext/include/aarch64-elf" ]; then
     echo "    → Copying architecture headers..."
-    cp -r .ext/include/aarch64-elf "${INSTALL_DIR}/include/ruby-3.2.0/" 2>/dev/null || true
+    cp -r .ext/include/aarch64-elf "${INSTALL_DIR}/include/ruby-${RUBY_API}/" 2>/dev/null || true
 fi
 
 echo "✓ Install complete"
@@ -752,17 +802,17 @@ else
 fi
 
 # Check headers
-if [ ! -d "${INSTALL_DIR}/include/ruby-3.2.0" ]; then
-    echo "❌ Headers not found: ${INSTALL_DIR}/include/ruby-3.2.0"
+if [ ! -d "${INSTALL_DIR}/include/ruby-${RUBY_API}" ]; then
+    echo "❌ Headers not found: ${INSTALL_DIR}/include/ruby-${RUBY_API}"
     echo ""
     echo "Current structure:"
     find "${INSTALL_DIR}/include" -maxdepth 2 -type d 2>/dev/null || echo "  (empty)"
     ERRORS=1
 else
-    echo "✅ Headers: ruby-3.2.0/"
+    echo "✅ Headers: ruby-${RUBY_API}/"
     
     # Check for architecture-specific headers
-    ARCH_HEADERS=$(find "${INSTALL_DIR}/include/ruby-3.2.0" -name "config.h" | head -1)
+    ARCH_HEADERS=$(find "${INSTALL_DIR}/include/ruby-${RUBY_API}" -name "config.h" | head -1)
     if [ -n "$ARCH_HEADERS" ]; then
         echo "✅ Arch headers: $(dirname $ARCH_HEADERS | xargs basename)"
     else
@@ -779,11 +829,11 @@ fi
 # Success!
 echo ""    
     echo "════════════════════════════════════════════════════════════"
-echo "  ✅ Ruby 3.2.2 Built Successfully!"
+echo "  ✅ Ruby ${RUBY_VER} Built Successfully!"
     echo "════════════════════════════════════════════════════════════"
     echo ""
 echo "Library:  ${INSTALL_DIR}/lib/libruby-static.a (${SIZE_MB} MB)"
-echo "Headers:  ${INSTALL_DIR}/include/ruby-3.2.0/"
+echo "Headers:  ${INSTALL_DIR}/include/ruby-${RUBY_API}/"
 echo ""
 echo "Next: cd /workspace/switch/buildScripts && ./build_mkxpz_switch.sh"
 echo ""
