@@ -7,7 +7,8 @@ switch_stub_sources = files(
   'switch_main.cpp',
   'switch_gamepicker.cpp',
   'switch_pickerui.cpp',
-  'switch_swkbd.cpp'
+  'switch_swkbd.cpp',
+  'switch_controls.cpp'
 )
 
 switch_inc = include_directories(
