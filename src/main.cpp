@@ -352,6 +352,8 @@ int main(int argc, char *argv[]) {
         "romfs:/preload/win32_wrap.rb",
         // Shows "Loading <title>..." while the game's scripts load
         "romfs:/preload/loading_screen.rb",
+        // Game Boy style Start/Select, B-to-run and ZL soft reset
+        "romfs:/preload/switch_controls.rb",
     });
 #endif
 
