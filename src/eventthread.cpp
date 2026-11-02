@@ -105,6 +105,8 @@ uint8_t EventThread::keyStates[];
 
 #ifdef __SWITCH__
 extern "C" int switch_swkbd_get_text(char *out, size_t outSize);
+/* switch/switch_controls.h: a custom controller profile presses keys */
+extern "C" void switch_controls_update(const bool *buttons, const int *axes, uint8_t *keyStates);
 
 // SDL timer callback; param is (scancode << 1) | pressed
 static Uint32 pushSyntheticKey(Uint32, void *param)
@@ -470,14 +472,23 @@ void EventThread::process(RGSSThreadData &rtData)
                 
             case SDL_CONTROLLERBUTTONDOWN:
                 controllerState.buttons[event.cbutton.button] = true;
+#ifdef __SWITCH__
+                switch_controls_update(controllerState.buttons, controllerState.axes, keyStates);
+#endif
                 break;
                 
             case SDL_CONTROLLERBUTTONUP:
                 controllerState.buttons[event.cbutton.button] = false;
+#ifdef __SWITCH__
+                switch_controls_update(controllerState.buttons, controllerState.axes, keyStates);
+#endif
                 break;
                 
             case SDL_CONTROLLERAXISMOTION:
                 controllerState.axes[event.caxis.axis] = event.caxis.value;
+#ifdef __SWITCH__
+                switch_controls_update(controllerState.buttons, controllerState.axes, keyStates);
+#endif
                 break;
                 
             case SDL_CONTROLLERDEVICEADDED:

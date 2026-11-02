@@ -26,6 +26,12 @@
 
 #include <stdio.h>
 
+#ifdef __SWITCH__
+/* switch/switch_controls.h: a custom controller profile presses keyboard
+ * keys itself, so the controller bindings below must not also fire */
+extern "C" bool switch_controls_custom_active();
+#endif
+
 struct KbBindingData
 {
 	SDL_Scancode source;
@@ -170,6 +176,11 @@ BDescVec genDefaultBindings(const Config &conf)
 	else
 		for (size_t i = 0; i < defaultKbBindings2N; ++i)
 			defaultKbBindings2[i].add(d);
+
+#ifdef __SWITCH__
+	if (switch_controls_custom_active())
+		return d;
+#endif
 
 	for (size_t i = 0; i < defaultCtrlBindingsN; ++i)
 		defaultCtrlBindings[i].add(d);

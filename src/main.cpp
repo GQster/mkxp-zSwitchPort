@@ -139,6 +139,7 @@ extern "C" void switch_enable_logging();
 extern "C" void switch_boot_mark(const char *msg);
 extern "C" void switch_setup_openal_debug();
 extern "C" bool switch_pick_game(char *out, size_t outSize);
+extern "C" void switch_controls_load_active();
 extern "C" void switch_return_to_picker(const char *argv0);
 #define BOOT_MARK(msg) switch_boot_mark(msg)
 #else
@@ -260,6 +261,9 @@ int main(int argc, char *argv[]) {
     }
     switch_boot_mark("main: after switch_pick_game\n");
     switch_enable_logging();
+    // Before the bindings are generated: a custom profile replaces the
+    // controller bindings
+    switch_controls_load_active();
     switch_boot_mark("main: logging enabled\n");
     printf("mkxp-z: game folder '%s'\n", switchGameDir);
 #endif
