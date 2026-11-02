@@ -21,6 +21,14 @@
 // leaves a breadcrumb on the SD card. Kept separate from mkxpz_log.txt.
 #define BOOT_LOG_FILE "sdmc:/mkxpz_boot.log"
 
+// Skips the CPU boost below when this exists
+#define NO_BOOST_FLAG_FILE "sdmc:/switch/mkxp-z/noboost.txt"
+
+// Homebrew gets the stock 1020 MHz CPU clock, where Ruby-heavy games
+// (Pokemon Essentials) stutter on menus, map changes and battles. Run at
+// 1785 MHz, the clock the system itself uses in boost mode.
+#define BOOST_CPU_HZ 1785000000
+
 extern "C" {
 int switch_trace_enabled = 0;
 }
@@ -47,6 +55,88 @@ static int open_log_fd(const char *path, int flags) {
                  path, errno);
     boot_log(msg);
     return fd;
+}
+
+// CPU clock control: clkrst on 8.0.0+, pcv before that.
+static bool clockReady;
+static u32 cpuClockBefore;
+static bool cpuBoosted;
+static AppletHookCookie clockHook;
+
+static u32 get_cpu_clock() {
+    u32 hz = 0;
+    if (!clockReady)
+        return 0;
+    if (hosversionAtLeast(8, 0, 0)) {
+        ClkrstSession s;
+        if (R_SUCCEEDED(clkrstOpenSession(&s, PcvModuleId_CpuBus, 3))) {
+            clkrstGetClockRate(&s, &hz);
+            clkrstCloseSession(&s);
+        }
+    } else {
+        pcvGetClockRate(PcvModule_CpuBus, &hz);
+    }
+    return hz;
+}
+
+static bool set_cpu_clock(u32 hz) {
+    if (!clockReady)
+        return false;
+    if (hosversionAtLeast(8, 0, 0)) {
+        ClkrstSession s;
+        if (R_FAILED(clkrstOpenSession(&s, PcvModuleId_CpuBus, 3)))
+            return false;
+        Result rc = clkrstSetClockRate(&s, hz);
+        clkrstCloseSession(&s);
+        return R_SUCCEEDED(rc);
+    }
+    return R_SUCCEEDED(pcvSetClockRate(PcvModule_CpuBus, hz));
+}
+
+// The system resets clocks on dock/undock and when returning from HOME, so
+// reapply the boost on those events, and drop it while out of focus.
+static void clock_hook(AppletHookType hook, void *) {
+    if (hook == AppletHookType_OnExitRequest)
+        return;
+    if (appletGetFocusState() == AppletFocusState_InFocus)
+        set_cpu_clock(BOOST_CPU_HZ);
+    else
+        set_cpu_clock(cpuClockBefore);
+}
+
+static void boost_cpu() {
+    struct stat st;
+    if (stat(NO_BOOST_FLAG_FILE, &st) == 0) {
+        boot_log("cpu: boost skipped (noboost.txt)\n");
+        return;
+    }
+    clockReady = R_SUCCEEDED(hosversionAtLeast(8, 0, 0) ? clkrstInitialize()
+                                                         : pcvInitialize());
+    cpuClockBefore = get_cpu_clock();
+    if (cpuClockBefore == 0)
+        cpuClockBefore = 1020000000;
+    cpuBoosted = set_cpu_clock(BOOST_CPU_HZ);
+    if (cpuBoosted)
+        appletHook(&clockHook, clock_hook, NULL);
+
+    char msg[96];
+    snprintf(msg, sizeof(msg), "cpu: %u MHz -> %u MHz %s\n",
+             cpuClockBefore / 1000000, get_cpu_clock() / 1000000,
+             cpuBoosted ? "ok" : "FAILED");
+    boot_log(msg);
+}
+
+static void restore_cpu() {
+    if (cpuBoosted) {
+        appletUnhook(&clockHook);
+        set_cpu_clock(cpuClockBefore);
+    }
+    if (clockReady) {
+        if (hosversionAtLeast(8, 0, 0))
+            clkrstExit();
+        else
+            pcvExit();
+    }
 }
 
 // Helper to redirect stdout/stderr to a file on the SD card
@@ -113,11 +203,14 @@ void userAppInit(void) {
     //    operations simply fail with errors instead of taking down the app.
     // socketsReady = R_SUCCEEDED(socketInitializeDefault());
 
+    boost_cpu();
+
     boot_log("userAppInit: done (networking disabled)\n");
 }
 
 // This hook is called after main() returns
 void userAppExit(void) {
+    restore_cpu();
     if (socketsReady)
         socketExit();
     romfsExit();
