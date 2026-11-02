@@ -23,14 +23,9 @@ mkxp.layout
 mkxp.cbp
 
 # General
+.DS_Store
 .AppleDouble
 .LSOverride
-*.swp
-*.swo
-*.log
-*.tmp
-*.bak
-*.DS_Store
 
 # Icon must end with two \r
 Icon
@@ -82,92 +77,6 @@ DerivedData/
 ## Gcc Patch
 /*.gcno
 
-# ────────────────────────────────
-# 🧱 Build Output Directories
-# ────────────────────────────────
-# Meson / CMake build dirs
-build-*/
-**/build-*/
-build/
-build-switch/
-build-linux/
-
-# External project builds
-physfs-build/
-SDL_sound-build/
-
-# Any CMake intermediate files
-CMakeFiles/
-CMakeCache.txt
-Makefile
-cmake_install.cmake
-install_manifest.txt
-
-# ────────────────────────────────
-# 📦 Downloaded / Generated Archives
-# ────────────────────────────────
-ruby-*.tar.gz*
-physfs-*.tar.gz*
-SDL_sound-*.tar.gz*
-*.zip
-*.tar
-
-# ────────────────────────────────
-# 🎧 External Source Trees
-# ────────────────────────────────
-physfs-src/
-SDL_sound-src/
-
-# ────────────────────────────────
-# ⚙️ Compiled Objects / Binaries
-# ────────────────────────────────
-*.o
-*.obj
-*.elf
-*.nacp
-*.nro
-*.a
-*.so
-*.dll
-*.exe
-*.dylib
-*.pdb
-
-# ────────────────────────────────
-# 📚 Generated Libs
-# ────────────────────────────────
-libs/
-
-# ────────────────────────────────
-# 🧪 Test / Temporary Files
-# ────────────────────────────────
-test.c
-test.elf
-*.tmp.*
-
-# ────────────────────────────────
-# 🐋 Docker
-# ────────────────────────────────
-**/docker-compose.yml
-**/Dockerfile.build
-**/*.dockerfile
-*.docker
-
-# ────────────────────────────────
-# 💡 IDE / Editor
-# ────────────────────────────────
-.vscode/
-.idea/
-*.code-workspace
-compile_commands.json
-
-# ────────────────────────────────
-# 🧰 System / Misc
-# ────────────────────────────────
-Thumbs.db
-ehthumbs.db
-desktop.ini
-
-# Notes
-# /switch/notes/*
-testGames/
+# Nintendo Switch (switch/README.md)
+/build-switch
+/testGames
