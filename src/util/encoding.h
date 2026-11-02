@@ -1,4 +1,3 @@
-// SWITCH_UCHARDET_PATCH
 //
 //  encoding.h
 //  mkxp-z
@@ -14,11 +13,7 @@
 
 #include "util/encoding.h"
 #include <iconv.h>
-#ifdef __SWITCH__
-#include <uchardet/uchardet.h>
-#else
 #include <uchardet.h>
-#endif
 #include <errno.h>
 
 namespace Encoding {

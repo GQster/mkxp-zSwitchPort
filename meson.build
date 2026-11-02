@@ -117,10 +117,7 @@ if host_system in ['windows', 'cygwin']
     subdir('windows')
     global_include_dirs += include_directories('windows')
 elif host_system == 'switch'
-    # Use our new Switch directory instead of linux/macos
     subdir('switch')
-    # Link the switch stub library
-    global_dependencies += declare_dependency(link_with: switch_stubs)
     windows_resources = []
 else
     windows_resources = []

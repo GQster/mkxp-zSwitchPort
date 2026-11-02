@@ -173,8 +173,6 @@ using socket_t = SOCKET;
 
 #include <arpa/inet.h>
 #if !defined(_AIX) && !defined(__MVS__)
-#ifndef __SWITCH__
-// SWITCH_HTTPLIB_PATCH
 #include <ifaddrs.h>
 #endif
 #ifdef __MVS__
@@ -195,16 +193,10 @@ using socket_t = SOCKET;
 #endif
 #include <csignal>
 #include <pthread.h>
-#ifndef __SWITCH__
-// SWITCH_HTTPLIB_PATCH
 #include <sys/mman.h>
-#endif
 #include <sys/select.h>
 #include <sys/socket.h>
-#ifndef __SWITCH__
-// SWITCH_HTTPLIB_PATCH
 #include <sys/un.h>
-#endif
 #include <unistd.h>
 
 using socket_t = int;

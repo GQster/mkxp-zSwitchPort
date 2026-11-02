@@ -97,49 +97,18 @@ endif
 meson.add_dist_script(python, files('../distscript.py'), get_option('dist_subprojects'), distscript_vcs_command)
 global_dependencies += declare_dependency(sources: git_hash_file)
 
-# Nintendo Switch: devkitPro portlibs plus our static builds in libs/ (see
-# switch/buildScripts/configure_mkxpz.sh and build_ruby_switch.sh). The
-# lookups below find these overrides instead of building vendored copies.
-# Portlibs with usable pkg-config files (SDL2, zlib, OpenAL, Ogg, Vorbis,
-# Theora, FreeType, uchardet) are found normally; the Switch build passes
-# -Ddefault_system=enabled so nothing else falls back to a vendored build.
+# Nintendo Switch: dependencies come from devkitPro's portlibs where possible
+# (see switch/buildScripts/build_mkxpz_switch.sh)
 if host_system == 'switch'
-    switch_libs = meson.project_source_root() / 'libs'
-    switch_portlibs = '/opt/devkitpro/portlibs/switch'
-
     # There is no gl.pc; the GL headers are in portlibs and gl-fun.cpp loads
     # the functions through SDL
     meson.override_dependency('gl', declare_dependency())
 
-    # iconv is stubbed in switch/switch_iconv_stub.c
-    meson.override_dependency('iconv', declare_dependency())
-
-    # PhysFS with our Switch platform patches
-    meson.override_dependency('physfs', declare_dependency(
-        include_directories: include_directories('../libs/physfs-switch/include'),
-        link_args: [switch_libs / 'physfs-switch/lib/libphysfs.a'],
-    ))
-
-    meson.override_dependency('sdl2_sound', declare_dependency(
-        include_directories: include_directories('../libs/SDL_sound-switch/include'),
-        link_args: [switch_libs / 'SDL_sound-switch/lib/libSDL2_sound.a'],
-    ))
-
-    meson.override_dependency('fluidsynth', declare_dependency(
-        include_directories: include_directories('../libs/fluidsynth-switch/include'),
-        link_args: [switch_libs / 'fluidsynth-switch/lib/libfluidsynth.a'],
-    ))
-
-    # The portlibs .pc files are named SDL2_ttf/SDL2_image and leave the
-    # static dependencies to Requires.private
-    meson.override_dependency('sdl2_ttf', declare_dependency(
-        include_directories: include_directories(switch_portlibs / 'include/SDL2'),
-        link_args: ['-L' + switch_portlibs / 'lib', '-lSDL2_ttf', '-lfreetype', '-lharfbuzz'],
-    ))
-    meson.override_dependency('sdl2_image', declare_dependency(
-        include_directories: include_directories(switch_portlibs / 'include/SDL2'),
-        link_args: ['-L' + switch_portlibs / 'lib', '-lSDL2_image', '-ljpeg', '-lpng16', '-lwebp'],
-    ))
+    # The portlibs .pc files are named SDL2_ttf/SDL2_image. (As an internal
+    # dependency, SDL_ttf's font type is taken to be _TTF_Font, which it is
+    # in portlibs; the TTF_Font compile test below can't tell the two apart.)
+    meson.override_dependency('sdl2_ttf', declare_dependency(dependencies: dependency('SDL2_ttf')))
+    meson.override_dependency('sdl2_image', dependency('SDL2_image'))
 endif
 
 gl = dependency('gl', allow_fallback: false, required: get_option('gl_system').disable_auto_if(default_system_disabled).enable_auto_if(default_system_enabled))
@@ -1340,31 +1309,9 @@ main_source = files(
     'input/keybindings.cpp',
 
     'net/LUrlParser.cpp',
-    'net/net.cpp',
+    host_system != 'switch' ? 'net/net.cpp' : [], # Switch: switch/switch_http_stub.cpp
 
     host_system == 'darwin' ? 'system/systemImplApple.mm' : 'system/systemImpl.cpp',
 )
 
 global_sources += main_source
-
-# ──────────────────────────────────────────────────────────────
-# 🕹️ Nintendo Switch platform support
-# ──────────────────────────────────────────────────────────────
-if host_system == 'switch'
-    switch_dir = meson.project_source_root() / 'switch'
-    global_sources += files(
-        switch_dir / 'switch_main.cpp',
-        switch_dir / 'SwitchFilesystem.cpp',
-        switch_dir / 'SwitchInput.cpp',
-    )
-
-    # Additional Switch-specific compile flags
-    global_args += [
-        '-D__SWITCH__',
-        '-DMKXP_BACKEND_GLES2',
-        '-Dunix'
-    ]
-
-    # Static dependencies of the portlibs above, then libnx
-    global_link_args += ['-lpng16', '-lbz2', '-lz', '-lnx', '-lm']
-endif

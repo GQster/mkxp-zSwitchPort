@@ -19,15 +19,7 @@ export PATH=${DEVKITARM}/bin:${DEVKITPRO}/tools/bin:$PATH
 
 export ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 BUILD=${ROOT}/build-switch
-LIBS=${ROOT}/libs
 CROSS_FILE=${ROOT}/switch/switch.ini
-
-# ──────────────────────────────────────────────────────────────
-# CRITICAL: Force pkg-config to ONLY use Switch libraries
-# ──────────────────────────────────────────────────────────────
-export PKG_CONFIG_LIBDIR=/opt/devkitpro/portlibs/switch/lib/pkgconfig:/opt/devkitpro/libnx/lib/pkgconfig
-export PKG_CONFIG_PATH=
-export PKG_CONFIG_SYSROOT_DIR=/opt/devkitpro
 
 echo ""
 echo "📋 Build Configuration:"
@@ -37,28 +29,6 @@ echo "  • Cross File:  ${CROSS_FILE}"
 echo "  • Toolchain:   ${DEVKITARM}"
 echo ""
 
-# ──────────────────────────────────────────────────────────────
-# Verify custom libraries exist
-# ──────────────────────────────────────────────────────────────
-echo "🔍 Verifying custom libraries..."
-
-REQUIRED_LIBS=(
-    "${LIBS}/physfs-switch/lib/libphysfs.a"
-    "${LIBS}/SDL_sound-switch/lib/libSDL2_sound.a"
-    "${LIBS}/fluidsynth-switch/lib/libfluidsynth.a"
-    "${LIBS}/pixman-switch/lib/libpixman-1.a"
-)
-
-for lib in "${REQUIRED_LIBS[@]}"; do
-    if [ ! -f "$lib" ]; then
-        echo "❌ ERROR: Required library not found: $lib"
-        echo "   Please run dependency build scripts first!"
-        exit 1
-    fi
-    echo "  ✓ Found: $(basename $lib)"
-done
-
-echo ""
 
 # ──────────────────────────────────────────────────────────────
 # Clean previous build
@@ -78,24 +48,25 @@ fi
 echo "🔧 Configuring mkxp-z for Nintendo Switch with Meson..."
 echo ""
 
-# default_system=enabled: take every dependency from portlibs or the
-# overrides in src/meson.build, never from a vendored subproject build,
-# except Ruby (ruby_system=disabled), which is built from upstream's
-# subprojects/ruby-3.1.wrap.
-# b_staticpic=false: libmkxp-z.a would otherwise get -fPIC after the cross
-# file's -fPIE, and -fPIC with -mtp=soft triggers devkitA64's TLS miscompile
-# (switch/notes/round6-pixman/tls-audit.txt).
+# default_system=enabled: take dependencies from devkitPro's portlibs. The
+# ones portlibs lack, or whose portlib can't be used, are built from mkxp-z's
+# subprojects (*_system=disabled), with Switch patches where needed.
 meson setup "${BUILD}" "${ROOT}" \
     --cross-file "${CROSS_FILE}" \
     -Ddefault_library=static \
     -Dbuildtype=release \
     -Duse_miniffi=false \
     -Ddefault_system=enabled \
+    -Dfluidsynth_system=disabled \
+    -Diconv_system=disabled \
+    -Dphysfs_system=disabled \
     -Dpixman_system=disabled \
     -Druby_system=disabled \
+    -Dsdl_sound_system=disabled \
+    -Duchardet_system=disabled \
     -Dmri_version=3.1 \
-    -Dopenssl=disabled \
-    -Db_staticpic=false
+    -Dopenssl=disabled
+
 
 if [ $? -ne 0 ]; then
     echo ""
