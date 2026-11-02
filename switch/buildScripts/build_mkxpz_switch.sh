@@ -91,6 +91,7 @@ meson setup "${BUILD}" "${ROOT}" \
     -Dbuildtype=release \
     -Duse_miniffi=false \
     -Ddefault_system=enabled \
+    -Dpixman_system=disabled \
     -Druby_system=disabled \
     -Dmri_version=3.1 \
     -Dopenssl=disabled \

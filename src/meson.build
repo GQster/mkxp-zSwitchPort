@@ -130,14 +130,6 @@ if host_system == 'switch'
         link_args: [switch_libs / 'fluidsynth-switch/lib/libfluidsynth.a'],
     ))
 
-    # Pixman rebuilt with -fPIE. devkitPro's prebuilt libpixman-1.a has the
-    # soft-TLS miscompile (`lsl tp, #1` in _pixman_implementation_lookup_composite),
-    # see switch/notes/round6-pixman/tls-audit.txt.
-    meson.override_dependency('pixman-1', declare_dependency(
-        include_directories: include_directories(switch_portlibs / 'include/pixman-1'),
-        link_args: [switch_libs / 'pixman-switch/lib/libpixman-1.a'],
-    ))
-
     # The portlibs .pc files are named SDL2_ttf/SDL2_image and leave the
     # static dependencies to Requires.private
     meson.override_dependency('sdl2_ttf', declare_dependency(

@@ -19,7 +19,6 @@
 ** along with mkxp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "switch_compat.h"
 // SWITCH_OPENAL_PATCH
 #include <cassert>
 #include "eventthread.h"
