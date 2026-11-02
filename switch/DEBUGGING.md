@@ -31,6 +31,21 @@ contents don't matter, so an empty file works.
 | `alwave.txt` | Needs `debug.txt` as well. OpenAL mixes into `sdmc:/mkxpz_al.wav` instead of the speakers, so there is no sound while it's on. It tells mixer problems apart from Switch audio-output problems. The game writes `alsoft_wave.conf` next to it; delete both files afterwards. |
 | `noboost.txt` | Keeps the stock 1020 MHz CPU clock instead of raising it to 1785 MHz while the game runs. |
 
+## Controller profiles (`controls.json`)
+
+Profiles made in the game picker's Settings tile are saved to
+`sdmc:/switch/mkxp-z/controls.json`, with the name of the active profile.
+Keys are stored by their SDL names (`"Return"`, `"Left Shift"`, `"F6"`), and
+inputs by the names in `switch/switch_controls.cpp` (`"A"`, `"ZL"`,
+`"LStickUp"`, ...). The file can be edited by hand. If it's missing or
+unreadable, the built-in Default profile is used. Default keeps the engine's
+own controller bindings, so deleting the file resets everything. With
+`debug.txt`, `mkxpz_log.txt` shows which profile each game started with:
+
+```
+controls: using custom profile 'Lefty'
+```
+
 ## Logs written on every launch
 
 ### `sdmc:/mkxpz_boot.log`

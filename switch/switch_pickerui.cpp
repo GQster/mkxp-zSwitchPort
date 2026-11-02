@@ -18,6 +18,10 @@
 #include <algorithm>
 
 #include "switch_pickerui.h"
+#include "switch_controls.h"
+
+// switch_swkbd.cpp
+extern "C" int switch_swkbd_get_text(char *out, size_t outSize);
 
 // Draws a Switch home-screen look-alike with SDL_ttf/SDL_image onto a plain
 // surface and copies it into a libnx framebuffer, so SDL video stays
@@ -312,9 +316,11 @@ void drawStatus(SDL_Surface *c, const Fonts &fonts, int battery) {
     drawText(c, fonts.medium, clock, TEXT, right, 30, RIGHT);
 }
 
+// tiles are the games plus the Settings tile, which is last
 void drawFrame(SDL_Surface *c, const Fonts &fonts, const std::vector<PickerGame> &games,
                const std::vector<SDL_Surface *> &thumbs, int sel, int first,
                double t, int battery) {
+    bool settings = sel == (int)games.size() - 1;
     SDL_FillRect(c, NULL, mapRgb(c, BG));
 
     drawText(c, fonts.medium, "mkxp-z", TEXT, 60, 30, LEFT);
@@ -345,7 +351,7 @@ void drawFrame(SDL_Surface *c, const Fonts &fonts, const std::vector<PickerGame>
     snprintf(count, sizeof(count), "%d / %d", sel + 1, (int)games.size());
     drawText(c, fonts.small, count, TEXT_DIM, 60, FOOTER_Y + 22, LEFT);
     int right = drawHint(c, fonts, "B", "Exit to hbmenu", SCREEN_W - 60);
-    drawHint(c, fonts, "A", "Start", right);
+    drawHint(c, fonts, "A", settings ? "Open" : "Start", right);
 }
 
 void present(Framebuffer &fb, SDL_Surface *c) {
@@ -358,6 +364,433 @@ void present(Framebuffer &fb, SDL_Surface *c) {
 
 TTF_Font *openSharedFont(const PlFontData &font, int size) {
     return TTF_OpenFontRW(SDL_RWFromConstMem(font.address, font.size), 1, size);
+}
+
+// ---- Settings: controller profiles (switch_controls.h) ----
+
+using namespace SwitchControls;
+
+// A gear drawn per pixel, for the Settings tile
+SDL_Surface *makeGearThumb() {
+    SDL_Surface *t = SDL_CreateRGBSurfaceWithFormat(0, TILE, TILE, 32, SDL_PIXELFORMAT_RGBA32);
+    if (!t)
+        return NULL;
+    SDL_FillRect(t, NULL, mapRgb(t, TILE_BG));
+    const double cx = TILE / 2.0, cy = TILE / 2.0;
+    const double body = 62, tooth = 84, hole = 26, teeth = 8, pi = 3.14159265358979;
+    Uint32 color = mapRgb(t, TEXT_DIM);
+    SDL_LockSurface(t);
+    for (int y = 0; y < TILE; ++y) {
+        Uint32 *row = (Uint32 *)((Uint8 *)t->pixels + y * t->pitch);
+        for (int x = 0; x < TILE; ++x) {
+            double dx = x - cx, dy = y - cy, rho = sqrt(dx * dx + dy * dy);
+            double phase = fmod((atan2(dy, dx) + pi) * teeth / (2 * pi), 1.0);
+            bool solid = rho < body || (rho < tooth && phase > 0.25 && phase < 0.75);
+            if (solid && rho > hole)
+                row[x] = color;
+        }
+    }
+    SDL_UnlockSurface(t);
+    roundCorners(t, TILE_RADIUS);
+    return t;
+}
+
+// Shared state of the settings screens, which draw onto the picker's canvas
+struct Ui {
+    Framebuffer &fb;
+    SDL_Surface *c;
+    const Fonts &fonts;
+    PadState &pad;
+    bool psm;
+    int battery;
+    std::string toast;
+    u64 toastUntil;
+};
+
+struct Row {
+    std::string left, right;
+    bool dim, accent; // greyed-out row; right text in the accent color
+};
+
+struct Hint {
+    const char *glyph, *text;
+};
+
+const int LIST_Y = 170, ROW_H = 46;
+const int LIST_ROWS_VISIBLE = (FOOTER_Y - 30 - LIST_Y) / ROW_H;
+
+// Polls input for one frame; false when the app is asked to exit
+bool nextFrame(Ui &ui, u64 &down, u64 &held, u64 &now) {
+    if (!appletMainLoop())
+        return false;
+    padUpdate(&ui.pad);
+    down = padGetButtonsDown(&ui.pad);
+    held = padGetButtons(&ui.pad);
+    now = armTicksToNs(armGetSystemTick());
+    u32 pct;
+    if (ui.psm && R_SUCCEEDED(psmGetBatteryChargePercentage(&pct)))
+        ui.battery = (int)pct;
+    return true;
+}
+
+void showToast(Ui &ui, const std::string &msg) {
+    ui.toast = msg;
+    ui.toastUntil = armTicksToNs(armGetSystemTick()) + 2500000000ULL;
+}
+
+// Up/down with repeat while held, keeping sel within count and visible
+struct ListNav {
+    int sel = 0, top = 0;
+    u64 heldSince = 0, lastRepeat = 0;
+
+    void update(u64 down, u64 held, u64 now, int count) {
+        int step = 0;
+        u64 dirs = HidNpadButton_AnyUp | HidNpadButton_AnyDown;
+        if (down & dirs) {
+            heldSince = lastRepeat = now;
+            step = (down & HidNpadButton_AnyUp) ? -1 : 1;
+        } else if ((held & dirs) && now - heldSince > 400000000ULL &&
+                   now - lastRepeat > 80000000ULL) {
+            lastRepeat = now;
+            step = (held & HidNpadButton_AnyUp) ? -1 : 1;
+        }
+        sel = std::max(0, std::min(count - 1, sel + step));
+        keepVisible();
+    }
+
+    void keepVisible() {
+        if (sel < top)
+            top = sel;
+        else if (sel >= top + LIST_ROWS_VISIBLE)
+            top = sel - LIST_ROWS_VISIBLE + 1;
+    }
+};
+
+void drawScreen(Ui &ui, const std::string &title, const std::string &subtitle,
+                const std::vector<Row> &rows, int sel, int top,
+                const std::vector<Hint> &hints) {
+    SDL_Surface *c = ui.c;
+    SDL_FillRect(c, NULL, mapRgb(c, BG));
+    drawText(c, ui.fonts.medium, "mkxp-z", TEXT, 60, 30, LEFT);
+    drawStatus(c, ui.fonts, ui.battery);
+    drawText(c, ui.fonts.title, fitText(ui.fonts.title, title, SCREEN_W - 120), ACCENT, 60, 84, LEFT);
+    if (!subtitle.empty())
+        drawText(c, ui.fonts.small, fitText(ui.fonts.small, subtitle, SCREEN_W - 120),
+                 TEXT_DIM, 60, 130, LEFT);
+
+    for (int i = top; i < (int)rows.size() && i < top + LIST_ROWS_VISIBLE; ++i) {
+        int y = LIST_Y + (i - top) * ROW_H;
+        if (i == sel) {
+            fillRoundRect(c, {50, y - 2, SCREEN_W - 100, ROW_H - 4}, 6, mapRgb(c, ACCENT));
+            fillRoundRect(c, {53, y + 1, SCREEN_W - 106, ROW_H - 10}, 4, mapRgb(c, TILE_BG));
+        }
+        const Row &r = rows[i];
+        int textY = y + (ROW_H - 4 - TTF_FontHeight(ui.fonts.medium)) / 2;
+        drawText(c, ui.fonts.medium, fitText(ui.fonts.medium, r.left, 560), r.dim ? TEXT_DIM : TEXT,
+                 74, textY, LEFT);
+        drawText(c, ui.fonts.medium, fitText(ui.fonts.medium, r.right, 560),
+                 r.accent ? ACCENT : TEXT_DIM, SCREEN_W - 74, textY, RIGHT);
+    }
+    if (top > 0)
+        drawText(c, ui.fonts.small, "more above", TEXT_DIM, SCREEN_W / 2, LIST_Y - 26, CENTER);
+    if (top + LIST_ROWS_VISIBLE < (int)rows.size())
+        drawText(c, ui.fonts.small, "more below", TEXT_DIM, SCREEN_W / 2,
+                 LIST_Y + LIST_ROWS_VISIBLE * ROW_H, CENTER);
+
+    if (!ui.toast.empty() && armTicksToNs(armGetSystemTick()) < ui.toastUntil)
+        drawText(c, ui.fonts.small, ui.toast, ACCENT_HI, 60, FOOTER_Y - 36, LEFT);
+
+    SDL_Rect line = {30, FOOTER_Y, SCREEN_W - 60, 1};
+    SDL_FillRect(c, &line, mapRgb(c, LINE));
+    int right = SCREEN_W - 60;
+    for (auto it = hints.rbegin(); it != hints.rend(); ++it)
+        right = drawHint(c, ui.fonts, it->glyph, it->text, right);
+}
+
+// A short list of choices; returns the chosen index or -1 for B
+int runMenu(Ui &ui, const std::string &title, const std::vector<std::string> &options) {
+    std::vector<Row> rows;
+    for (const std::string &o : options)
+        rows.push_back({o, "", false, false});
+    ListNav nav;
+    u64 down, held, now;
+    while (nextFrame(ui, down, held, now)) {
+        if (down & HidNpadButton_B)
+            return -1;
+        if (down & HidNpadButton_A)
+            return nav.sel;
+        nav.update(down, held, now, (int)rows.size());
+        drawScreen(ui, title, "", rows, nav.sel, nav.top, {{"A", "OK"}, {"B", "Back"}});
+        present(ui.fb, ui.c);
+    }
+    return -1;
+}
+
+// Name from the system keyboard; false if cancelled or empty
+bool askName(std::string &name) {
+    char buf[64];
+    if (switch_swkbd_get_text(buf, sizeof(buf)) != 1)
+        return false;
+    name = buf;
+    name.erase(0, name.find_first_not_of(' '));
+    name.erase(name.find_last_not_of(' ') + 1);
+    return !name.empty();
+}
+
+// Switch input for libnx HID buttons, as captured by "Map a button"
+const struct { u64 button; int input; } HID_INPUTS[] = {
+    {HidNpadButton_A, In_A}, {HidNpadButton_B, In_B},
+    {HidNpadButton_X, In_X}, {HidNpadButton_Y, In_Y},
+    {HidNpadButton_L, In_L}, {HidNpadButton_R, In_R},
+    {HidNpadButton_ZL, In_ZL}, {HidNpadButton_ZR, In_ZR},
+    {HidNpadButton_Minus, In_Minus},
+    {HidNpadButton_StickL, In_LStick}, {HidNpadButton_StickR, In_RStick},
+    {HidNpadButton_Up, In_DUp}, {HidNpadButton_Down, In_DDown},
+    {HidNpadButton_Left, In_DLeft}, {HidNpadButton_Right, In_DRight},
+    {HidNpadButton_StickLUp, In_LSUp}, {HidNpadButton_StickLDown, In_LSDown},
+    {HidNpadButton_StickLLeft, In_LSLeft}, {HidNpadButton_StickLRight, In_LSRight},
+    {HidNpadButton_StickRUp, In_RSUp}, {HidNpadButton_StickRDown, In_RSDown},
+    {HidNpadButton_StickRLeft, In_RSLeft}, {HidNpadButton_StickRRight, In_RSRight},
+};
+
+// Waits for the next Switch input; -1 if cancelled. + is captured on a short
+// press, and holding it for a second cancels.
+int runCapture(Ui &ui, const std::string &profile) {
+    const u64 CANCEL_HOLD = 1000000000ULL;
+    u64 down, held, now, plusSince = 0;
+    bool released = false; // ignore the A press that opened this screen
+    while (nextFrame(ui, down, held, now)) {
+        if (!released) {
+            released = held == 0;
+        } else if (plusSince) {
+            if (now - plusSince >= CANCEL_HOLD)
+                return -1;
+            if (!(held & HidNpadButton_Plus))
+                return In_Plus;
+        } else if (down & HidNpadButton_Plus) {
+            plusSince = now;
+        } else {
+            for (const auto &h : HID_INPUTS)
+                if (down & h.button)
+                    return h.input;
+        }
+        drawScreen(ui, "Profile: " + profile, "", {}, 0, 0, {});
+        drawText(ui.c, ui.fonts.title, "Press a button...", TEXT, SCREEN_W / 2, 300, CENTER);
+        drawText(ui.c, ui.fonts.small, "The next button you press is the one you'll change.",
+                 TEXT_DIM, SCREEN_W / 2, 370, CENTER);
+        drawText(ui.c, ui.fonts.small, "Hold + for a second to cancel.", TEXT_DIM,
+                 SCREEN_W / 2, 404, CENTER);
+        present(ui.fb, ui.c);
+    }
+    return -1;
+}
+
+// Picks keys for one input. A replaces its keys with the selected key, Y adds
+// or removes the selected key, X clears them. Returns whether keys changed.
+bool runKeyPicker(Ui &ui, Profile &profile, int input) {
+    struct Entry { SDL_Scancode key; int group; };
+    std::vector<Entry> entries;
+    std::vector<int> groupStart;
+    const std::vector<KeyGroup> &groups = keyGroups();
+    for (int g = 0; g < (int)groups.size(); ++g) {
+        groupStart.push_back((int)entries.size());
+        for (SDL_Scancode k : groups[g].keys)
+            entries.push_back({k, g});
+    }
+
+    std::vector<SDL_Scancode> &keys = profile.keys[input];
+    ListNav nav;
+    for (int i = 0; i < (int)entries.size(); ++i)
+        if (!keys.empty() && entries[i].key == keys[0]) {
+            nav.sel = i;
+            break;
+        }
+    nav.keepVisible();
+
+    bool changed = false;
+    u64 down, held, now;
+    while (nextFrame(ui, down, held, now)) {
+        if (down & HidNpadButton_B)
+            break;
+        SDL_Scancode key = entries[nav.sel].key;
+        auto bound = std::find(keys.begin(), keys.end(), key);
+        if (down & HidNpadButton_A) {
+            keys = {key};
+            changed = true;
+            break;
+        }
+        if (down & HidNpadButton_Y) {
+            if (bound != keys.end())
+                keys.erase(bound);
+            else
+                keys.push_back(key);
+            changed = true;
+        }
+        if (down & HidNpadButton_X) {
+            keys.clear();
+            changed = true;
+        }
+        if (down & (HidNpadButton_L | HidNpadButton_R)) {
+            int g = entries[nav.sel].group + ((down & HidNpadButton_L) ? -1 : 1);
+            g = (g + (int)groups.size()) % (int)groups.size();
+            nav.sel = groupStart[g];
+            nav.top = nav.sel;
+            nav.keepVisible();
+        }
+        nav.update(down, held, now, (int)entries.size());
+
+        std::vector<Row> rows;
+        for (const Entry &e : entries) {
+            bool on = std::find(keys.begin(), keys.end(), e.key) != keys.end();
+            rows.push_back({keyName(e.key), on ? "sent" : "", false, on});
+        }
+        std::string subtitle = std::string(groups[entries[nav.sel].group].name) +
+                               "  (L / R: jump to another group)";
+        drawScreen(ui, std::string(inputLabel(input)) + " sends: " + keysLabel(keys), subtitle,
+                   rows, nav.sel, nav.top,
+                   {{"A", "Set"}, {"Y", "Add / remove"}, {"X", "Clear"}, {"B", "Done"}});
+        present(ui.fb, ui.c);
+    }
+    return changed;
+}
+
+// Lists a profile's bindings. Returns whether it was changed.
+bool runEditor(Ui &ui, Profile &profile, bool readOnly) {
+    ListNav nav;
+    bool changed = false;
+    u64 down, held, now;
+    while (nextFrame(ui, down, held, now)) {
+        if (down & HidNpadButton_B)
+            break;
+        if (down & HidNpadButton_A) {
+            if (readOnly) {
+                showToast(ui, "Default can't be changed. Make a copy with + New profile.");
+            } else {
+                int input = nav.sel == 0 ? runCapture(ui, profile.name) : nav.sel - 1;
+                if (input >= 0) {
+                    changed |= runKeyPicker(ui, profile, input);
+                    nav.sel = input + 1;
+                    nav.keepVisible();
+                }
+                continue;
+            }
+        }
+        std::vector<Row> rows;
+        rows.push_back({readOnly ? "Map a button (copy this profile to change it)" : "Map a button",
+                        "", readOnly, false});
+        for (int i = 0; i < InputCount; ++i)
+            rows.push_back({inputLabel(i), keysLabel(profile.keys[i]), false, false});
+        nav.update(down, held, now, (int)rows.size());
+        drawScreen(ui, "Profile: " + profile.name,
+                   readOnly ? "Built in: the engine's own controller layout" : "", rows,
+                   nav.sel, nav.top, {{"A", readOnly ? "Select" : "Change"}, {"B", "Back"}});
+        present(ui.fb, ui.c);
+    }
+    return changed;
+}
+
+bool save(Ui &ui, const Store &store) {
+    if (saveStore(SWITCH_CONTROLS_FILE, store))
+        return true;
+    showToast(ui, "Couldn't save " SWITCH_CONTROLS_FILE);
+    return false;
+}
+
+// Asks for a name and adds a copy of source; returns its index or -1
+int copyProfile(Ui &ui, Store &store, const Profile &source) {
+    std::string name;
+    if (!askName(name))
+        return -1;
+    Profile p = source;
+    p.name = uniqueName(store, name);
+    store.profiles.push_back(p);
+    save(ui, store);
+    return (int)store.profiles.size() - 1;
+}
+
+// The profile list: Default, the custom profiles, then "+ New profile"
+void runControls(Ui &ui) {
+    Store store = loadStore(SWITCH_CONTROLS_FILE);
+    ListNav nav;
+    u64 down, held, now;
+    while (nextFrame(ui, down, held, now)) {
+        int count = (int)store.profiles.size();
+        bool isDefault = nav.sel == 0, isNew = nav.sel == count + 1;
+        Profile *custom = (!isDefault && !isNew) ? &store.profiles[nav.sel - 1] : nullptr;
+
+        if (down & HidNpadButton_B)
+            break;
+        if (down & HidNpadButton_A) {
+            if (isNew) {
+                int i = copyProfile(ui, store, defaultProfile());
+                if (i >= 0) {
+                    nav.sel = i + 1;
+                    custom = &store.profiles[i];
+                }
+            }
+            if (isDefault) {
+                Profile copy = defaultProfile();
+                runEditor(ui, copy, true);
+            } else if (custom && runEditor(ui, *custom, false)) {
+                save(ui, store);
+            }
+            continue;
+        }
+        if ((down & HidNpadButton_Y) && !isNew) {
+            store.active = custom ? custom->name : "";
+            if (save(ui, store))
+                showToast(ui, (custom ? custom->name : std::string(DEFAULT_NAME)) +
+                                  " is active for the next game you start.");
+        }
+        if ((down & HidNpadButton_X) && !isNew) {
+            const Profile &source = custom ? *custom : defaultProfile();
+            std::vector<std::string> opts = {"Make a copy"};
+            if (custom)
+                opts.insert(opts.end(), {"Rename", "Delete"});
+            int choice = runMenu(ui, source.name, opts);
+            if (choice == 0) {
+                Profile src = source; // copyProfile may reallocate the list
+                int i = copyProfile(ui, store, src);
+                if (i >= 0)
+                    nav.sel = i + 1;
+            } else if (choice == 1) {
+                std::string name;
+                if (askName(name) && name != custom->name) {
+                    std::string old = custom->name;
+                    custom->name = uniqueName(store, name);
+                    if (store.active == old)
+                        store.active = custom->name;
+                    save(ui, store);
+                }
+            } else if (choice == 2 &&
+                       runMenu(ui, "Delete " + custom->name + "?", {"No", "Delete"}) == 1) {
+                if (store.active == custom->name)
+                    store.active = "";
+                store.profiles.erase(store.profiles.begin() + (nav.sel - 1));
+                nav.sel = std::min(nav.sel, (int)store.profiles.size());
+                save(ui, store);
+            }
+            nav.keepVisible();
+            continue;
+        }
+
+        const Profile *active = findProfile(store, store.active);
+        std::vector<Row> rows;
+        rows.push_back({DEFAULT_NAME, active ? "built in" : "ACTIVE", false, !active});
+        for (const Profile &p : store.profiles)
+            rows.push_back({p.name, &p == active ? "ACTIVE" : "", false, &p == active});
+        rows.push_back({"+ New profile", "", true, false});
+        nav.update(down, held, now, (int)rows.size());
+
+        std::vector<Hint> hints = {{"A", nav.sel == (int)rows.size() - 1 ? "Create" : "Open"}};
+        if (nav.sel != (int)rows.size() - 1)
+            hints.insert(hints.end(), {{"Y", "Make active"}, {"X", "More"}});
+        hints.push_back({"B", "Back"});
+        drawScreen(ui, "Settings: Controls",
+                   "Button profiles. The active one is used by every game you start.",
+                   rows, nav.sel, nav.top, hints);
+        present(ui.fb, ui.c);
+    }
 }
 
 } // namespace
@@ -397,9 +830,15 @@ PickerResult pickerUiRun(const std::vector<PickerGame> &games, int &sel) {
         std::vector<SDL_Surface *> thumbs;
         for (const PickerGame &g : games)
             thumbs.push_back(makeThumb(g, fonts));
+        // The Settings tile is always last
+        std::vector<PickerGame> tiles = games;
+        tiles.push_back({"", "Settings"});
+        thumbs.push_back(makeGearThumb());
+        const int settingsTile = (int)tiles.size() - 1;
 
         PadState pad;
         padInitializeDefault(&pad);
+        Ui ui{fb, canvas, fonts, pad, psm, battery, "", 0};
         int first = std::max(0, sel - VISIBLE_TILES + 1);
         u64 heldSince = 0, lastRepeat = 0;
         result = PICKER_QUIT;
@@ -413,8 +852,14 @@ PickerResult pickerUiRun(const std::vector<PickerGame> &games, int &sel) {
             if (down & (HidNpadButton_Plus | HidNpadButton_B))
                 break; // back to hbmenu
             if (down & HidNpadButton_A) {
-                result = PICKER_PICKED;
-                break;
+                if (sel != settingsTile) {
+                    result = PICKER_PICKED;
+                    break;
+                }
+                ui.battery = battery;
+                runControls(ui);
+                battery = ui.battery;
+                continue;
             }
 
             // Left/right, repeating while held
@@ -429,7 +874,7 @@ PickerResult pickerUiRun(const std::vector<PickerGame> &games, int &sel) {
                 step = (held & HidNpadButton_AnyLeft) ? -1 : 1;
             }
             if (step)
-                sel = std::max(0, std::min((int)games.size() - 1, sel + step));
+                sel = std::max(0, std::min(settingsTile, sel + step));
             if (sel < first)
                 first = sel;
             else if (sel >= first + VISIBLE_TILES)
@@ -439,7 +884,7 @@ PickerResult pickerUiRun(const std::vector<PickerGame> &games, int &sel) {
             if (psm && R_SUCCEEDED(psmGetBatteryChargePercentage(&pct)))
                 battery = (int)pct;
 
-            drawFrame(canvas, fonts, games, thumbs, sel, first, now / 1e9, battery);
+            drawFrame(canvas, fonts, tiles, thumbs, sel, first, now / 1e9, battery);
             present(fb, canvas); // waits for a free buffer (vsync)
         }
 
