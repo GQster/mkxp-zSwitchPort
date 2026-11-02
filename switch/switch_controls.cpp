@@ -1,7 +1,7 @@
 #include "switch_controls.h"
 
 #include "util/json5pp.hpp"
-#include "util/switch-trace.h"
+#include "switch-trace.h"
 
 #include <SDL_keyboard.h>
 

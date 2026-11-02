@@ -20,7 +20,6 @@
 */
 
 #include "filesystem.h"
-#include "switch-trace.h"
 
 #include "util/boost-hash.h"
 #include "util/debugwriter.h"
@@ -51,7 +50,6 @@
 
 #ifdef __SWITCH__
 #include <dirent.h>
-#include <chrono>
 #include <unordered_set>
 #endif
 
@@ -255,7 +253,6 @@ static const char *findExt(const char *filename) {
 static void initReadOps(PHYSFS_File *handle, SDL_RWops &ops, bool freeOnClose) {
 #ifdef __SWITCH__
   /* Unbuffered, every read is a filesystem service call. SDL_sound's Ogg
-    THIS FIXES LAG ON SWITCH. Was lagging when loading sound effects because
    * decoder (stb_vorbis) reads one byte at a time, which made loading even
    * a short sound effect block the game for one to two seconds. */
   PHYSFS_setBuffer(handle, 64 * 1024);
@@ -296,9 +293,6 @@ struct FileSystemPrivate {
 
 static void throwPhysfsError(const char *desc) {
   PHYSFS_ErrorCode ec = PHYSFS_getLastErrorCode();
-  printf("throwPhysfsError: desc='%s', ec=%d\n", desc, (int)ec);
-  fflush(stdout);
-
   const char *englishStr;
     if (ec == 0) {
         // Sometimes on Windows PHYSFS_init can return null
@@ -308,28 +302,12 @@ static void throwPhysfsError(const char *desc) {
         englishStr = PHYSFS_getErrorByCode(ec);
     }
 
-  printf("throwPhysfsError: message='%s'\n", englishStr);
-  fflush(stdout);
-
   throw Exception(Exception::PHYSFSError, "%s: %s", desc, englishStr);
 }
 
 FileSystem::FileSystem(const char *argv0, bool allowSymlinks) {
-#ifdef __SWITCH__
-  // PhysFS only needs a non-null "program name" for base dir detection.
-  // On Switch, argv0 is meaningless anyway, so just give it a dummy.
-  const char *physfsArgv = "mkxp-z";
-#else
-  const char *physfsArgv = argv0;
-#endif
-
-
-  if (PHYSFS_init(physfsArgv) == 0) {
-    printf("FileSystem::FileSystem: PHYSFS_init FAILED\n");
-    fflush(stdout);
+  if (PHYSFS_init(argv0) == 0)
     throwPhysfsError("Error initializing PhysFS");
-  }
-  fflush(stdout);
 
   /* One error (=return 0) turns the whole product to 0 */
 
@@ -339,31 +317,21 @@ FileSystem::FileSystem(const char *argv0, bool allowSymlinks) {
   er *= PHYSFS_registerArchiver(&RGSS2_Archiver);
   er *= PHYSFS_registerArchiver(&RGSS3_Archiver);
 
-  SWITCH_TRACE("FileSystem::FileSystem: after registerArchiver, er=%d\n", er);
-
-  if (er == 0) {
-    printf("FileSystem::FileSystem: registerArchiver FAILED\n");
-    fflush(stdout);
+  if (er == 0)
     throwPhysfsError("Error registering PhysFS RGSS archiver");
-  }
 
   p = new FileSystemPrivate;
   p->havePathCache = false;
 
   if (allowSymlinks)
     PHYSFS_permitSymbolicLinks(1);
-
-  SWITCH_TRACE("FileSystem::FileSystem: exit\n");
 }
 
 FileSystem::~FileSystem() {
-  SWITCH_TRACE("FileSystem::dtor: begin\n");
   delete p;
 
-  SWITCH_TRACE("FileSystem::dtor: before PHYSFS_deinit\n");
   if (PHYSFS_deinit() == 0)
     Debug() << "PhyFS failed to deinit.";
-  SWITCH_TRACE("FileSystem::dtor: end\n");
 }
 
 void FileSystem::addPath(const char *path, const char *mountpoint, bool reload) {
@@ -526,23 +494,16 @@ void FileSystem::createPathCache() {
   Debug() << "Loading path cache...";
 
   CacheEnumData data(p);
-  data.fileLists.push(&p->fileLists[""]);
 #ifdef __SWITCH__
-  auto start = std::chrono::steady_clock::now();
   /* The game folder is the working directory, mounted at the root */
   data.scanRealDir("");
 #endif
+  data.fileLists.push(&p->fileLists[""]);
   PHYSFS_enumerate("", cacheEnumCB, &data);
 
   p->havePathCache = true;
 
-#ifdef __SWITCH__
-  long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::steady_clock::now() - start).count();
-  Debug() << "Path cache completed:" << data.realFiles.size() << "files in" << ms << "ms";
-#else
   Debug() << "Path cache completed.";
-#endif
 }
 
 void FileSystem::reloadPathCache() {

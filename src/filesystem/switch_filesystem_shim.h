@@ -4,6 +4,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <errno.h>
+/* ghc::filesystem has no Switch target; its Linux code works on newlib */
+#define GHC_OS_LINUX
+#define GHC_OS_DETECTED
+
 #ifndef AT_FDCWD
 #define AT_FDCWD (-100)
 #endif

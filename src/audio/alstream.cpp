@@ -20,7 +20,6 @@
 */
 
 #include "alstream.h"
-#include "switch-trace.h"
 
 #include "sharedstate.h"
 #include "sharedmidistate.h"
@@ -45,23 +44,18 @@ ALStream::ALStream(LoopMode loopMode,
 	  preemptPause(false),
       pitch(1.0f)
 {
-	SWITCH_TRACE("ALStream::ctor: enter (threadId=%s)\n", threadId.c_str());
 	alSrc = AL::Source::gen();
-	SWITCH_TRACE("ALStream::ctor: after Source::gen\n");
 
 	AL::Source::setVolume(alSrc, 1.0f);
 	AL::Source::setPitch(alSrc, 1.0f);
 	AL::Source::detachBuffer(alSrc);
-	SWITCH_TRACE("ALStream::ctor: after Source setup\n");
 
 	for (int i = 0; i < STREAM_BUFS; ++i)
 		alBuf[i] = AL::Buffer::gen();
-	SWITCH_TRACE("ALStream::ctor: after Buffer::gen\n");
 
 	pauseMut = SDL_CreateMutex();
 
 	threadName = std::string("al_stream (") + threadId + ")";
-	SWITCH_TRACE("ALStream::ctor: exit\n");
 }
 
 ALStream::~ALStream()
@@ -216,7 +210,6 @@ struct ALStreamOpenHandler : FileSystem::OpenHandler
 		{
 			if (!strcmp(sig, "OggS"))
 			{
-				SWITCH_TRACE("ALStream: Vorbis source (.%s)\n", ext ? ext : "");
 				source = createVorbisSource(ops, looped);
 				return true;
 			}
@@ -227,14 +220,14 @@ struct ALStreamOpenHandler : FileSystem::OpenHandler
 
 				if (HAVE_FLUID)
 				{
-					SWITCH_TRACE("ALStream: MIDI source via FluidSynth (.%s)\n", ext ? ext : "");
 					source = createMidiSource(ops, looped);
 					return true;
 				}
 #ifdef __SWITCH__
-				/* No fluidsynth on Switch, and SDL_sound's MIDI decoder
-				 * blocks forever without patches. Skip the file so a
-				 * same-named non-MIDI track (e.g. Title.ogg) is tried. */
+				/* Without FluidSynth (no soundfont), SDL_sound's MIDI
+				 * decoder blocks forever on Switch without patches. Skip
+				 * the file so a same-named non-MIDI track (e.g.
+				 * Title.ogg) is tried. */
 				SDL_RWclose(&ops);
 				errorMsg = "MIDI playback is unavailable";
 				return false;

@@ -20,7 +20,6 @@
  */
 
 #include "graphics.h"
-#include "switch-trace.h"
 
 #include "alstream.h"
 #include "audio.h"
@@ -871,25 +870,13 @@ struct GraphicsPrivate {
         rtData->config.enableHires ? (int)lround(rtData->config.framebufferScalingFactor * DEF_SCREEN_H) : DEF_SCREEN_H),
     scSize(scRes),
     winSize(rtData->config.defScreenW, rtData->config.defScreenH),
-    screen(scRes.x, scRes.y),
-    threadData(rtData),
-    glCtx(SDL_GL_GetCurrentContext()),
-    multithreadedMode(true),
-    frameRate(DEF_FRAMERATE),
-    frameCount(0),
-    brightness(255),
-    fpsLimiter(frameRate),
-    useFrameSkip(rtData->config.frameSkip),
-    frozen(false),
-    last_update(0),
-    last_avg_update(0),
-    backingScaleFactor(1),
-    integerScaleFactor(0, 0),
+    screen(scRes.x, scRes.y), threadData(rtData),
+    glCtx(SDL_GL_GetCurrentContext()), multithreadedMode(true),
+    frameRate(DEF_FRAMERATE), frameCount(0), brightness(255),
+    fpsLimiter(frameRate), useFrameSkip(rtData->config.frameSkip), frozen(false),
+    last_update(0), last_avg_update(0), backingScaleFactor(1), integerScaleFactor(0, 0),
     integerScaleActive(rtData->config.integerScaling.active),
-    integerLastMileScaling(rtData->config.integerScaling.lastMileScaling) 
-    {
-        SWITCH_TRACE("GraphicsPrivate::ctor: begin\n");
-
+    integerLastMileScaling(rtData->config.integerScaling.lastMileScaling) {
         avgFPSData = std::vector<double>();
         avgFPSLock = SDL_CreateMutex();
         glResourceLock = SDL_CreateMutex();
@@ -910,17 +897,13 @@ struct GraphicsPrivate {
         screenQuad.setTexPosRect(screenRect, screenRect);
         
         fpsLimiter.resetFrameAdjust();
-
-        SWITCH_TRACE("GraphicsPrivate::ctor: end\n");
     }
     
     ~GraphicsPrivate() {
-        SWITCH_TRACE("GraphicsPrivate::dtor: begin\n");
         TEXFBO::fini(frozenScene);
         TEXFBO::fini(integerScaleBuffer);
         SDL_DestroyMutex(avgFPSLock);
         SDL_DestroyMutex(glResourceLock);
-        SWITCH_TRACE("GraphicsPrivate::dtor: end\n");
     }
     
     void updateScreenResoRatio(RGSSThreadData *rtData) {

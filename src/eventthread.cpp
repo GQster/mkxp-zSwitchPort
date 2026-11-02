@@ -1,26 +1,24 @@
 /*
-** eventthread.cpp
-**
-** This file is part of mkxp.
-**
-** Copyright (C) 2013 - 2021 Amaryllis Kulla <ancurio@mapleshrine.eu>
-**
-** mkxp is free software: you can redistribute it and/or modify
-** it under the terms of the GNU General Public License as published by
-** the Free Software Foundation, either version 2 of the License, or
-** (at your option) any later version.
-**
-** mkxp is distributed in the hope that it will be useful,
-** but WITHOUT ANY WARRANTY; without even the implied warranty of
-** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-** GNU General Public License for more details.
-**
-** You should have received a copy of the GNU General Public License
-** along with mkxp.  If not, see <http://www.gnu.org/licenses/>.
-*/
+ ** eventthread.cpp
+ **
+ ** This file is part of mkxp.
+ **
+ ** Copyright (C) 2013 - 2021 Amaryllis Kulla <ancurio@mapleshrine.eu>
+ **
+ ** mkxp is free software: you can redistribute it and/or modify
+ ** it under the terms of the GNU General Public License as published by
+ ** the Free Software Foundation, either version 2 of the License, or
+ ** (at your option) any later version.
+ **
+ ** mkxp is distributed in the hope that it will be useful,
+ ** but WITHOUT ANY WARRANTY; without even the implied warranty of
+ ** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ ** GNU General Public License for more details.
+ **
+ ** You should have received a copy of the GNU General Public License
+ ** along with mkxp.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
-// SWITCH_OPENAL_PATCH
-#include <cassert>
 #include "eventthread.h"
 
 #include <SDL_events.h>
@@ -30,24 +28,9 @@
 #include <SDL_touch.h>
 #include <SDL_rect.h>
 
-#ifdef __SWITCH__
-#include <AL/al.h>
-#else
 #include <al.h>
-#endif
-// SWITCH_OPENAL_PATCH
-#ifdef __SWITCH__
-#include <AL/alc.h>
-#else
 #include <alc.h>
-#endif
-// SWITCH_OPENAL_PATCH
-#ifdef __SWITCH__
-#include <AL/alext.h>
-#else
 #include <alext.h>
-#endif
-// SWITCH_OPENAL_PATCH
 #include <cmath>
 
 #include "sharedstate.h"
@@ -107,6 +90,7 @@ uint8_t EventThread::keyStates[];
 extern "C" int switch_swkbd_get_text(char *out, size_t outSize);
 /* switch/switch_controls.h: a custom controller profile presses keys */
 extern "C" void switch_controls_update(const bool *buttons, const int *axes, uint8_t *keyStates);
+extern "C" void switch_note_frame();
 
 // SDL timer callback; param is (scancode << 1) | pressed
 static Uint32 pushSyntheticKey(Uint32, void *param)
@@ -904,10 +888,6 @@ SDL_GameController *EventThread::controller() const
 {
     return ctrl;
 }
-
-#ifdef __SWITCH__
-extern "C" void switch_note_frame();
-#endif
 
 void EventThread::notifyFrame()
 {

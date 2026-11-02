@@ -20,7 +20,6 @@
  */
 
 #include "audio/audio.h"
-#include "switch-trace.h"
 #include "filesystem/filesystem.h"
 #include "display/graphics.h"
 #include "display/font.h"
@@ -42,9 +41,7 @@
 #include "eventthread.h"
 
 #include <vector>
-#ifndef __SWITCH__
 #include "util/rapidcsv.h"
-#endif
 
 extern "C" {
 #include <ruby.h>
@@ -66,7 +63,6 @@ extern "C" {
 #include <SDL_filesystem.h>
 #include <SDL_loadso.h>
 #include <SDL_power.h>
-#include <SDL_timer.h>
 
 #include "git-hash.h"
 
@@ -708,19 +704,6 @@ RB_METHOD_GUARD(mkxpLaunch) {
 }
 RB_METHOD_GUARD_END
 
-#ifdef __SWITCH__
-
-// Switch: rapidcsv is not used; provide a stub implementation.
-RB_METHOD_GUARD(mkxpParseCSV) {
-    RB_UNUSED_PARAM;
-
-    // Could also rb_warn(...) if you want a Ruby warning.
-    return rb_ary_new(); // empty array
-}
-RB_METHOD_GUARD_END
-
-#else
-
 RB_METHOD_GUARD(mkxpParseCSV) {
     RB_UNUSED_PARAM;
     
@@ -747,7 +730,6 @@ RB_METHOD_GUARD(mkxpParseCSV) {
     return ret;
 }
 RB_METHOD_GUARD_END
-#endif // __SWITCH__
 
 json5pp::value loadUserSettings() {
     json5pp::value ret;
@@ -854,19 +836,7 @@ struct evalArg {
 };
 
 static VALUE evalHelper(evalArg *arg) {
-    // Evaluated from C, scripts inherit the VM's private toplevel scope on
-    // Ruby 3.2, so their top-level defs are private and calls like
-    // Kernel.pbShowCommands (Pokemon Essentials) raise NoMethodError; they
-    // work under the Ruby 3.0 that Windows mkxp-z games ship with. Start every
-    // script in public scope. (self may be nil, hence Object.__send__.) The
-    // extra line is offset by passing line 0, so line numbers are unchanged.
-    // A UTF-8 BOM is only skipped at the very start of the source, so drop it
-    // here rather than leave it at the start of line 2.
-    VALUE body = arg->string;
-    if (RSTRING_LEN(body) >= 3 && !memcmp(RSTRING_PTR(body), "\xEF\xBB\xBF", 3))
-        body = rb_str_subseq(body, 3, RSTRING_LEN(body) - 3); // bytes
-    VALUE src = rb_str_plus(rb_str_new_cstr("Object.__send__(:public)\n"), body);
-    VALUE argv[] = {src, Qnil, arg->filename, INT2FIX(0)};
+    VALUE argv[] = {arg->string, Qnil, arg->filename};
     return rb_funcall2(topSelf, rb_intern("eval"), ARRAY_SIZE(argv), argv);
 }
 
@@ -987,10 +957,6 @@ bool evalScript(VALUE string, const char *filename)
 static void runRMXPScripts(BacktraceData &btData) {
     const Config &conf = shState->rtData().config;
     const std::string &scriptPack = conf.game.scripts;
-#ifdef __SWITCH__
-    /* Debug tracing: where startup time goes before the game's Main script */
-    Uint32 traceStart = SDL_GetTicks();
-#endif
     
     if (scriptPack.empty()) {
         showMsg("No script file has been specified. Check the game's INI and try again.");
@@ -1069,9 +1035,6 @@ static void runRMXPScripts(BacktraceData &btData) {
         rb_ary_store(script, 3, rb_utf8_str_new_cstr(decodeBuffer.c_str()));
     }
     
-    SWITCH_TRACE("startup: %ld scripts read and decompressed in %u ms\n",
-                 scriptCount, SDL_GetTicks() - traceStart);
-
     /* Execute preloaded scripts */
     for (std::vector<std::string>::const_iterator i = conf.preloadScripts.begin();
          i != conf.preloadScripts.end(); ++i)
@@ -1135,18 +1098,7 @@ static void runRMXPScripts(BacktraceData &btData) {
             
             int state;
             
-#ifdef __SWITCH__
-            if (i == scriptCount - 1)
-                SWITCH_TRACE("startup: %ld script sections ran in %u ms, starting %s\n",
-                             scriptCount - 1, SDL_GetTicks() - traceStart, buf);
-            Uint32 sectionStart = SDL_GetTicks();
-#endif
             evalString(string, fname, &state);
-#ifdef __SWITCH__
-            if (SDL_GetTicks() - sectionStart >= 50 && i < scriptCount - 1)
-                SWITCH_TRACE("startup: script %s took %u ms\n", buf,
-                             SDL_GetTicks() - sectionStart);
-#endif
             if (state)
                 break;
         }
@@ -1233,7 +1185,6 @@ static void showExc(VALUE exc, const BacktraceData &btData) {
 }
 
 static void mriBindingExecute() {
-    SWITCH_TRACE("mriBindingExecute: enter\n");
     Config &conf = shState->rtData().config;
     
 #if RAPI_MAJOR >= 2
@@ -1244,19 +1195,12 @@ static void mriBindingExecute() {
     char **argv = 0;
     ruby_sysinit(&argc, &argv);
     
-    SWITCH_TRACE("mriBindingExecute: before RUBY_INIT_STACK\n");
     RUBY_INIT_STACK;
-    SWITCH_TRACE("mriBindingExecute: after RUBY_INIT_STACK\n");
-
-    SWITCH_TRACE("mriBindingExecute: before ruby_init\n");
     ruby_init();
-    SWITCH_TRACE("mriBindingExecute: after ruby_init\n");
     
-    SWITCH_TRACE("mriBindingExecute: setting up rubyArgsC\n");
     std::vector<const char*> rubyArgsC{"mkxp-z"};
     rubyArgsC.push_back("-e ");
     void *node;
-    SWITCH_TRACE("mriBindingExecute: jit.enabled=%d, yjit.enabled=%d\n", conf.jit.enabled, conf.yjit.enabled);
     if (conf.jit.enabled) {
 #if RAPI_FULL >= 310
         // Ruby v3.1.0 renamed the --jit options to --mjit.
@@ -1368,9 +1312,7 @@ static void mriBindingExecute() {
     if (!NIL_P(exc) && !rb_obj_is_kind_of(exc, rb_eSystemExit))
         showExc(exc, btData);
     
-    SWITCH_TRACE("mriBindingExecute: before ruby_cleanup\n");
     ruby_cleanup(0);
-    SWITCH_TRACE("mriBindingExecute: after ruby_cleanup\n");
     
     shState->rtData().rqTermAck.set();
 }

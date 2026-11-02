@@ -27,7 +27,6 @@
 #include "boost-hash.h"
 #include "util.h"
 #include "config.h"
-#include "switch-trace.h"
 #include "encoding.h"
 
 #include "debugwriter.h"
@@ -164,7 +163,6 @@ SharedFontState::SharedFontState(const Config &conf)
 
 SharedFontState::~SharedFontState()
 {
-	SWITCH_TRACE("SharedFontState::dtor: begin\n");
 	BoostHash<FontPPEMKey, std::array<TTF_Font*, 2>>::const_iterator iter;
 	for (iter = p->ppem_to_font.cbegin(); iter != p->ppem_to_font.cend(); ++iter)
 	{
@@ -174,7 +172,6 @@ SharedFontState::~SharedFontState()
 	}
 
 	delete p;
-	SWITCH_TRACE("SharedFontState::dtor: end\n");
 }
 
 static std::string decodeSfntName(const FT_SfntName &aname)

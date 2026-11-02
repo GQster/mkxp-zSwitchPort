@@ -341,7 +341,7 @@ void userAppExit(void) {
 // sdmc:/switch/mkxp-z/alwave.txt also exists, OpenAL mixes into
 // sdmc:/mkxpz_al.wav instead of the speakers, to tell mixer problems apart
 // from SDL/audren output problems.
-extern "C" void switch_setup_openal_debug() {
+static void switch_setup_openal_debug() {
     if (!switch_trace_enabled)
         return;
     setenv("ALSOFT_LOGLEVEL", "3", 1);
@@ -360,14 +360,10 @@ extern "C" void switch_setup_openal_debug() {
     printf("openal: wave backend -> sdmc:/mkxpz_al.wav\n");
 }
 
-// Breadcrumb hook for src/main.cpp (picker and early startup stages).
-extern "C" void switch_boot_mark(const char *msg) {
-    boot_log(msg);
-}
-
-// Stub so src/main.cpp's call links correctly
+// Called by src/main.cpp after the game picker, before OpenAL is opened
 extern "C" void switch_enable_logging() {
     setup_file_logging();
+    switch_setup_openal_debug();
 }
 
 #endif // __SWITCH__

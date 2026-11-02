@@ -24,7 +24,6 @@
 #endif
 
 #include "icon.png.xxd"
-#include "switch-trace.h"
 
 #include <alc.h>
 #include <alext.h>
@@ -114,18 +113,6 @@ static inline const char *glGetStringInt(GLenum name) {
 }
 
 static void printGLInfo() {
-#ifdef __SWITCH__
-    const char* renderer_c = (const char*)gl.GetString(GL_RENDERER);
-    const char* version_c  = (const char*)gl.GetString(GL_VERSION);
-    const char* vendor_c   = (const char*)gl.GetString(GL_VENDOR);
-
-    Debug() << "Backend      : GLES";
-    Debug() << "GL Vendor    : " << (vendor_c ? vendor_c : "Unknown");
-    Debug() << "GL Renderer  : " << (renderer_c ? renderer_c : "Unknown");
-    Debug() << "GL Version   : " << (version_c ? version_c : "Unknown");
-
-    // Skip GLSL version / regex parsing for now
-#else
   const std::string renderer(glGetStringInt(GL_RENDERER));
   const std::string version(glGetStringInt(GL_VERSION));
 
@@ -133,22 +120,17 @@ static void printGLInfo() {
   Debug() << "GL Renderer  :" << renderer;
   Debug() << "GL Version   :" << version;
   Debug() << "GLSL Version :" << glGetStringInt(GL_SHADING_LANGUAGE_VERSION);
-#endif
 }
 
 static SDL_GLContext initGL(SDL_Window *win, Config &conf,
                             RGSSThreadData *threadData);
 
 #ifdef __SWITCH__
-extern "C" void switch_enable_logging();
-extern "C" void switch_boot_mark(const char *msg);
-extern "C" void switch_setup_openal_debug();
+/* switch/switch_main.cpp, switch/switch_controls.cpp */
 extern "C" bool switch_pick_game(char *out, size_t outSize);
+extern "C" void switch_enable_logging();
 extern "C" void switch_controls_load_active();
 extern "C" void switch_return_to_picker(const char *argv0);
-#define BOOT_MARK(msg) switch_boot_mark(msg)
-#else
-#define BOOT_MARK(msg) do {} while (0)
 #endif
 
 int rgssThreadFun(void *userdata) {
@@ -162,8 +144,6 @@ int rgssThreadFun(void *userdata) {
 #else
   SDL_GL_MakeCurrent(threadData->window, threadData->glContext);
 #endif
-
-  SWITCH_TRACE("RGSS thread: GL init done\n");
 
   /* Setup AL context */
   static const ALCint attrs[] = {
@@ -182,48 +162,31 @@ int rgssThreadFun(void *userdata) {
   ALCcontext *alcCtx = alcCreateContext(threadData->alcDev, attrs);
 
   if (!alcCtx) {
-    printf("RGSS thread: OpenAL context creation FAILED\n");
-    fflush(stdout);
     rgssThreadError(threadData, "Error creating OpenAL context");
     return 0;
   }
 
   alcMakeContextCurrent(alcCtx);
-  SWITCH_TRACE("RGSS thread: OpenAL context created\n");
 
   try {
-    SWITCH_TRACE("RGSS thread: before SharedState::initInstance\n");
     SharedState::initInstance(threadData);
-    SWITCH_TRACE("RGSS thread: after SharedState::initInstance\n");
   } catch (const Exception &exc) {
-    printf("RGSS thread: EXCEPTION in SharedState::initInstance: %s\n", exc.msg.c_str());
-    fflush(stdout);
     rgssThreadError(threadData, exc.msg);
     alcDestroyContext(alcCtx);
 
     return 0;
   }
 
-  SWITCH_TRACE("RGSS thread: before scriptBinding->execute()\n");
-
   /* Start script execution */
   scriptBinding->execute();
-
-  SWITCH_TRACE("RGSS thread: after scriptBinding->execute()\n");
-  BOOT_MARK("rgss: scriptBinding->execute returned\n");
 
   threadData->rqTermAck.set();
   threadData->ethread->requestTerminate();
 
-  BOOT_MARK("rgss: before SharedState::finiInstance\n");
   SharedState::finiInstance();
-  BOOT_MARK("rgss: after SharedState::finiInstance\n");
 
-  BOOT_MARK("rgss: before alcDestroyContext\n");
   alcDestroyContext(alcCtx);
-  BOOT_MARK("rgss: after alcDestroyContext\n");
 
-  BOOT_MARK("rgss: thread returning\n");
   return 0;
 }
 
@@ -302,25 +265,13 @@ int main(int argc, char *argv[]) {
 #ifdef __SWITCH__
     // Pick the game before SDL takes over the display
     char switchGameDir[512]{};
-    switch_boot_mark("main: before switch_pick_game\n");
-    if (!switch_pick_game(switchGameDir, sizeof(switchGameDir))) {
-        switch_boot_mark("main: picker returned false\n");
+    if (!switch_pick_game(switchGameDir, sizeof(switchGameDir)))
         return 0;
-    }
-    switch_boot_mark("main: after switch_pick_game\n");
     switch_enable_logging();
     // Before the bindings are generated: a custom profile replaces the
     // controller bindings
     switch_controls_load_active();
-    switch_boot_mark("main: logging enabled\n");
-    printf("mkxp-z: game folder '%s'\n", switchGameDir);
 #endif
-    SWITCH_TRACE("mkxp-z: entering main()\n");
-
-    // Print arguments for debugging
-    for(int i = 0; i < argc; i++) {
-        SWITCH_TRACE("Arg %d: %s\n", i, argv[i]);
-    }
 
     SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");
     SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
@@ -350,37 +301,19 @@ int main(int argc, char *argv[]) {
 #endif
     if (!dataDir[0]) {
 #ifdef __SWITCH__
-      std::strncpy(dataDir, switchGameDir, sizeof(dataDir));
+      std::strncpy(dataDir, switchGameDir, sizeof(dataDir) - 1);
 #else
       std::strncpy(dataDir, mkxp_fs::getDefaultGameRoot().c_str(), sizeof(dataDir));
 #endif
-      dataDir[sizeof(dataDir) - 1] = '\0';
     }
     mkxp_fs::setCurrentDirectory(dataDir);
 #endif
 
-    BOOT_MARK("main: before Config read\n");
-
     /* now we load the config */
     Config conf;
-
-    try {
-        conf.read(argc, argv);
-    } catch (const std::exception &e) {
-        printf("CRASH in Config::read: %s\n", e.what());
-        fflush(stdout);
-        showInitError(std::string("Config load failed: ") + e.what());
-        return 0;
-    } catch (...) {
-        printf("CRASH in Config::read: Unknown exception\n");
-        fflush(stdout);
-        showInitError("Config load failed: Unknown exception");
-        return 0;
-    }
+    conf.read(argc, argv);
     if (conf.windowTitle.empty())
       conf.windowTitle = conf.game.title;
-
-    BOOT_MARK("main: after Config read\n");
 
 #ifdef __SWITCH__
     // No MiniFFI on Switch: Ruby stand-ins from RomFS (switch/romfs-root/
@@ -412,19 +345,11 @@ int main(int argc, char *argv[]) {
     }
 #endif
 
-    BOOT_MARK("main: before SDL_Init\n");
-    SWITCH_TRACE("mkxp-z: before SDL_Init\n");
-
     /* initialize SDL first */
     if (SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_TIMER) < 0) {
-      printf("mkxp-z: SDL_Init failed: %s\n", SDL_GetError());
-      fflush(stdout);
       showInitError(std::string("Error initializing SDL: ") + SDL_GetError());
       return 0;
     }
-
-    BOOT_MARK("main: after SDL_Init\n");
-    SWITCH_TRACE("mkxp-z: after SDL_Init\n");
 
     SDL_Window *win = nullptr;
 
@@ -671,26 +596,15 @@ int main(int argc, char *argv[]) {
     }
 #endif // MKXPZ_HAVE_ANGLE
 
-    BOOT_MARK("main: before CreateWindow\n");
-    SWITCH_TRACE("mkxp-z: before SDL_CreateWindow\n");
-
     if (win == nullptr && (win = initVideo(conf)) == nullptr) {
       showInitError(std::string("Error creating window: ") + SDL_GetError());
       return 0;
     }
 
-    BOOT_MARK("main: after CreateWindow\n");
-    SWITCH_TRACE("mkxp-z: after SDL_CreateWindow\n");
-
     if (!EventThread::allocUserEvents()) {
-      printf("mkxp-z: EventThread::allocUserEvents failed\n");
-      fflush(stdout);
       showInitError("Error allocating SDL user events");
       return 0;
     }
-
-    BOOT_MARK("main: after allocUserEvents\n");
-    SWITCH_TRACE("mkxp-z: after EventThread::allocUserEvents\n");
 
 #ifdef MKXPZ_STEAM
     if (!STEAMSHIM_init()) {
@@ -703,9 +617,6 @@ int main(int argc, char *argv[]) {
 
     assert(conf.rgssVersion >= 1 && conf.rgssVersion <= 3);
     printRgssVersion(conf.rgssVersion);
-    BOOT_MARK("main: after rgss version\n");
-
-    SWITCH_TRACE("mkxp-z: before IMG_Init\n");
 
     int imgFlags = IMG_INIT_PNG | IMG_INIT_JPG;
     if (IMG_Init(imgFlags) != imgFlags) {
@@ -720,9 +631,6 @@ int main(int argc, char *argv[]) {
       return 0;
     }
 
-    BOOT_MARK("main: after IMG_Init\n");
-    SWITCH_TRACE("mkxp-z: after IMG_Init\n");
-
     if (TTF_Init() < 0) {
       showInitError(std::string("Error initializing SDL_ttf: ") +
                     SDL_GetError());
@@ -736,15 +644,6 @@ int main(int argc, char *argv[]) {
       return 0;
     }
 
-    BOOT_MARK("main: after TTF_Init\n");
-    SWITCH_TRACE("mkxp-z: after TTF_Init\n");
-
-#ifdef __SWITCH__
-// TODO grant: SDL_sound doesn't work on switch QUICK TEST DISABLING SOUND
-    if (Sound_Init() == 0) {
-        printf("Warning: SDL_sound failed to init, continuing anyway\n");
-    }
-#else
     if (Sound_Init() == 0) {
       showInitError(std::string("Error initializing SDL_sound: ") +
                     Sound_GetError());
@@ -758,9 +657,6 @@ int main(int argc, char *argv[]) {
 
       return 0;
     }
-#endif
-
-    BOOT_MARK("main: after Sound_Init\n");
 #if defined(__WIN32__)
     WSAData wsadata = {0};
     if (WSAStartup(0x101, &wsadata) || wsadata.wVersion != 0x101) {
@@ -812,9 +708,6 @@ int main(int argc, char *argv[]) {
     (void)setupWindowIcon;
 #endif
 
-#ifdef __SWITCH__
-    switch_setup_openal_debug();
-#endif
     ALCdevice *alcDev = alcOpenDevice(0);
 
     if (!alcDev) {
@@ -830,8 +723,6 @@ int main(int argc, char *argv[]) {
       return 0;
     }
 
-    BOOT_MARK("main: after alcOpenDevice\n");
-    SWITCH_TRACE("mkxp-z: after alcOpenDevice\n");
     SDL_DisplayMode mode;
     SDL_GetDisplayMode(0, 0, &mode);
 
@@ -841,13 +732,11 @@ int main(int argc, char *argv[]) {
 
     EventThread eventThread;
 
-    BOOT_MARK("main: before initGL\n");
 #ifndef MKXPZ_INIT_GL_LATER
     SDL_GLContext glCtx = initGL(win, conf, 0);
 #else
     SDL_GLContext glCtx = NULL;
 #endif
-    BOOT_MARK("main: after initGL\n");
 
     RGSSThreadData rtData(&eventThread, argv[0], win, alcDev, mode.refresh_rate,
                           mkxp_sys::getScalingFactor(), conf, glCtx);
@@ -868,21 +757,12 @@ int main(int argc, char *argv[]) {
 #endif
 
     /* Start RGSS thread */
-    BOOT_MARK("main: before RGSS thread\n");
-    SWITCH_TRACE("mkxp-z: before SDL_CreateThread (RGSS)\n");
     SDL_Thread *rgssThread = SDL_CreateThread(rgssThreadFun, "rgss", &rtData);
-    BOOT_MARK("main: RGSS thread started\n");
-
-    SWITCH_TRACE("mkxp-z: after SDL_CreateThread, before eventThread.process\n");
 
     /* Start event processing */
     eventThread.process(rtData);
 
-    BOOT_MARK("main: eventThread.process returned\n");
-    SWITCH_TRACE("mkxp-z: after eventThread.process, before rqTerm.set\n");
-
     /* Request RGSS thread to stop */
-    BOOT_MARK("main: before rqTerm.set\n");
     rtData.rqTerm.set();
 
     /* Wait for RGSS thread response */
@@ -896,51 +776,33 @@ int main(int argc, char *argv[]) {
       /* Give RGSS thread some time to respond */
       SDL_Delay(10);
     }
-    BOOT_MARK(rtData.rqTermAck ? "main: rqTermAck set, before SDL_WaitThread\n"
-                               : "main: rqTermAck NOT set, skipping SDL_WaitThread\n");
 
     /* If RGSS thread ack'd request, wait for it to shutdown,
      * otherwise abandon hope and just end the process as is. */
-    if (rtData.rqTermAck) {
+    if (rtData.rqTermAck)
       SDL_WaitThread(rgssThread, 0);
-      BOOT_MARK("main: after SDL_WaitThread\n");
-    } else {
+    else
       SDL_ShowSimpleMessageBox(
           SDL_MESSAGEBOX_ERROR, conf.game.title.c_str(),
           std::string("The RGSS script seems to be stuck. "+conf.game.title+" will now force quit.").c_str(),
           win);
-      BOOT_MARK("main: after stuck-script message box\n");
-    }
 
     if (!rtData.rgssErrorMsg.empty()) {
       Debug() << rtData.rgssErrorMsg;
       SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, conf.game.title.c_str(),
                                rtData.rgssErrorMsg.c_str(), win);
-      BOOT_MARK("main: after rgssErrorMsg box\n");
     }
 
-    if (rtData.glContext) {
-      BOOT_MARK("main: before SDL_GL_DeleteContext\n");
+    if (rtData.glContext)
       SDL_GL_DeleteContext(rtData.glContext);
-      BOOT_MARK("main: after SDL_GL_DeleteContext\n");
-    }
-
-    SWITCH_TRACE("mkxp-z: main() reaching shutdown path\n");
 
     /* Clean up any remainin events */
-    BOOT_MARK("main: before eventThread.cleanup\n");
     eventThread.cleanup();
-    BOOT_MARK("main: after eventThread.cleanup\n");
 
     Debug() << "Shutting down.";
-    BOOT_MARK("main: after 'Shutting down' debug line\n");
 
-    BOOT_MARK("main: before alcCloseDevice\n");
     alcCloseDevice(alcDev);
-    BOOT_MARK("main: after alcCloseDevice\n");
-
     SDL_DestroyWindow(win);
-    BOOT_MARK("main: after SDL_DestroyWindow\n");
 
 #if defined(__WIN32__)
     if (wsadata.wVersion)
@@ -951,19 +813,13 @@ int main(int argc, char *argv[]) {
     STEAMSHIM_deinit();
 #endif
     Sound_Quit();
-    BOOT_MARK("main: after Sound_Quit\n");
     TTF_Quit();
-    BOOT_MARK("main: after TTF_Quit\n");
     IMG_Quit();
-    BOOT_MARK("main: after IMG_Quit\n");
     SDL_Quit();
-    BOOT_MARK("main: after SDL_Quit\n");
 #ifdef __SWITCH__
     switch_return_to_picker(argc > 0 ? argv[0] : NULL);
-    BOOT_MARK("main: after switch_return_to_picker\n");
 #endif
 
-    SWITCH_TRACE("mkxp-z: leaving main()\n");
     return 0;
 }
 

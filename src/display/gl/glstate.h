@@ -25,7 +25,7 @@
 #include "etc.h"
 
 #include <stack>
-#include <cassert>
+#include <assert.h>
 
 struct Config;
 

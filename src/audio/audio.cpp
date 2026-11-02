@@ -20,7 +20,6 @@
 */
 
 #include "audio.h"
-#include "switch-trace.h"
 
 #include "audiostream.h"
 #include "soundemitter.h"
@@ -35,23 +34,6 @@
 
 #include <SDL_thread.h>
 #include <SDL_timer.h>
-
-#ifdef __SWITCH__
-#include <sys/time.h>
-
-// Debug tracing (debug.txt): log each sound the game starts, with wall-clock
-// time, so recorded audio can be matched against what was playing.
-#define TRACE_PLAY(kind, filename, volume, pitch)                              \
-    do {                                                                       \
-        struct timeval tv;                                                     \
-        gettimeofday(&tv, 0);                                                  \
-        SWITCH_TRACE("[audio] %ld.%03ld %s '%s' vol=%d pitch=%d\n",            \
-                     (long)tv.tv_sec, (long)(tv.tv_usec / 1000), kind,         \
-                     filename, volume, pitch);                                 \
-    } while (0)
-#else
-#define TRACE_PLAY(kind, filename, volume, pitch) do { } while (0)
-#endif
 
 struct AudioPrivate
 {
@@ -93,30 +75,22 @@ struct AudioPrivate
 	      syncPoint(rtData.syncPoint),
           volumeRatio(1)
 	{
-        SWITCH_TRACE("AudioPrivate::ctor: enter\n");
         for (int i = 0; i < rtData.config.BGM.trackCount; i++) {
             std::string id = std::string("bgm" + std::to_string(i));
             bgmTracks.push_back(new AudioStream(ALStream::Looped, id.c_str()));
         }
-        SWITCH_TRACE("AudioPrivate::ctor: after bgmTracks\n");
         
 		meWatch.state = MeNotPlaying;
-        SWITCH_TRACE("AudioPrivate::ctor: before createSDLThread\n");
 		meWatch.thread = createSDLThread
 			<AudioPrivate, &AudioPrivate::meWatchFun>(this, "audio_mewatch");
-        SWITCH_TRACE("AudioPrivate::ctor: exit\n");
 	}
 
 	~AudioPrivate()
 	{
-		SWITCH_TRACE("AudioPrivate::dtor: begin\n");
 		meWatch.termReq.set();
-		SWITCH_TRACE("AudioPrivate::dtor: joining midi watch thread\n");
 		SDL_WaitThread(meWatch.thread, 0);
-		SWITCH_TRACE("AudioPrivate::dtor: midi watch thread joined\n");
         for (auto track : bgmTracks)
             delete track;
-		SWITCH_TRACE("AudioPrivate::dtor: end\n");
 	}
     
     AudioStream *getTrackByIndex(int index) {
@@ -312,9 +286,7 @@ struct AudioPrivate
 
 Audio::Audio(RGSSThreadData &rtData)
 	: p(new AudioPrivate(rtData))
-{
-    SWITCH_TRACE("Audio::Audio: ctor complete\n");
-}
+{}
 
 
 void Audio::bgmPlay(const char *filename,
@@ -323,7 +295,6 @@ void Audio::bgmPlay(const char *filename,
                     double pos,
                     int track)
 {
-    TRACE_PLAY("bgm", filename, volume, pitch);
     if (track == -127) {
         for (int i = 0; i < (int)p->bgmTracks.size(); i++) {
             if (i == 0) {
@@ -387,7 +358,6 @@ void Audio::bgsPlay(const char *filename,
                     int pitch,
                     double pos)
 {
-    TRACE_PLAY("bgs", filename, volume, pitch);
 	p->bgs.play(filename, volume, pitch, pos);
 }
 
@@ -406,7 +376,6 @@ void Audio::mePlay(const char *filename,
                    int volume,
                    int pitch)
 {
-    TRACE_PLAY("me", filename, volume, pitch);
 	p->me.play(filename, volume, pitch);
 }
 
@@ -425,7 +394,6 @@ void Audio::sePlay(const char *filename,
                    int volume,
                    int pitch)
 {
-    TRACE_PLAY("se", filename, volume, pitch);
 	p->se.play(filename, volume, pitch);
 }
 
