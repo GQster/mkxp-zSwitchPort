@@ -186,9 +186,8 @@ To turn the offsets into function names, run `addr2line` on the ELF from the
 same build:
 
 ```bash
-docker run --rm -v "$PWD":/w -w /w switch-dev \
-  /opt/devkitpro/devkitA64/bin/aarch64-none-elf-addr2line -f -C -i \
-  -e build-switch/mkxp-z 0x133160 0xc8c08 0xfa24
+/opt/devkitpro/devkitA64/bin/aarch64-none-elf-addr2line -f -C -i \
+  -e build/mkxp-z.cortex-a57 0x133160 0xc8c08 0xfa24
 ```
 
 The ELF must come from the same build as the NRO that crashed: offsets change

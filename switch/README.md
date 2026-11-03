@@ -6,41 +6,37 @@ Pokémon Essentials fan games, from the SD card.
 
 ## Building
 
-Everything builds inside a Docker image based on `devkitpro/devkita64`:
+The port builds like any other mkxp-z cross build, with devkitPro's
+devkitA64, libnx and switch-tools (e.g. the `devkitpro/devkita64` Docker
+image), Meson, CMake, Ruby and bison:
 
 ```bash
-switch/buildScripts/docker_build.sh         # build-switch/mkxp-z.nro
-switch/buildScripts/docker_build.sh shell   # a shell in the container
+meson setup --cross-file switch/switch.ini --buildtype release build
+ninja -C build          # build/switch/nro/mkxp-z.nro
 ```
 
-The script builds the image from `switch/buildScripts/dockerfile` if it is
-missing and runs the build as your user, so nothing in the repo ends up owned
-by root.
+`switch/switch.ini` takes SDL2 and OpenAL from devkitPro's portlibs, since
+they use the system APIs; everything else comes from mkxp-z's subprojects, as
+on other platforms. Ruby and PhysFS get small Switch patches
+(`subprojects/packagefiles/ruby-3.1-switch.patch`, `physfs-switch.patch`),
+each behind `__SWITCH__`. `switch/nro/` packages the executable as a `.nro`
+with a RomFS made of `switch/romfs-root/` and `scripts/preload/win32_wrap.rb`.
 
-`build_mkxpz_switch.sh` is a normal Meson cross build with
-`switch/switch.ini`:
+`switch/Dockerfile` is an optional local build environment with the same
+packages as the CI job; its header shows how to use it.
 
-- Dependencies come from devkitPro's portlibs (SDL2, SDL2_ttf, SDL2_image,
-  OpenAL, Ogg/Vorbis, Theora, FreeType, zlib).
-- Everything else is built from mkxp-z's own subprojects, as on other
-  platforms: Ruby 3.1, PhysFS, SDL_sound, FluidSynth, pixman, uchardet and
-  libiconv. Ruby and PhysFS get small Switch patches
-  (`subprojects/packagefiles/ruby-3.1-switch.patch`, `physfs-switch.patch`),
-  each behind `__SWITCH__`.
-- The RomFS gets `switch/romfs-root/` plus `scripts/preload/win32_wrap.rb`.
-
-`switch/buildScripts/find_bad_tls.py` checks a disassembly of the ELF for
-devkitA64's soft-TLS miscompile. The cross file avoids it with
-`-ftls-model=local-exec`:
+`switch/find_bad_tls.py` checks a disassembly of the ELF for devkitA64's
+soft-TLS miscompile, which the cross file avoids with `-ftls-model=local-exec`
+(CI runs it too):
 
 ```bash
-aarch64-none-elf-objdump -d build-switch/mkxp-z.cortex-a57 > dis.txt
-python3 switch/buildScripts/find_bad_tls.py dis.txt
+/opt/devkitpro/devkitA64/bin/aarch64-none-elf-objdump -d build/mkxp-z.cortex-a57 > dis.txt
+python3 switch/find_bad_tls.py dis.txt
 ```
 
 ## Installing and playing
 
-1. Copy `build-switch/mkxp-z.nro` to the SD card as `/switch/mkxp-z.nro`.
+1. Copy `build/switch/nro/mkxp-z.nro` to the SD card as `/switch/mkxp-z.nro`.
 2. Put each game in its own folder under `/switch/mkxp-z/Games/`, with its
    `Game.ini`. A `mkxp.json` in the game folder is read as usual.
 3. Start the Homebrew Menu by holding R while launching a game, not from the

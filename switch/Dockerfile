@@ -1,12 +1,12 @@
-# Nintendo Switch (libnx) build image for mkxp-z.
+# Optional local build environment for the Switch port, with the same
+# packages the CI job (.github/workflows/autobuild.yml) installs:
 #
-# The devkitPro image already has devkitA64, libnx, switch-tools and every
-# portlib mkxp-z uses (SDL2, SDL2_ttf, SDL2_image, OpenAL, Ogg/Vorbis, Theora,
-# FreeType, zlib, ...); the rest is built from mkxp-z's Meson subprojects.
+#   docker build -t mkxp-z-switch switch
+#   docker run --rm -it -u $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/src -w /src mkxp-z-switch
+#
+# The devkitPro image has devkitA64, libnx, switch-tools, SDL2 and OpenAL.
 ARG BASE_IMAGE=devkitpro/devkita64:20251117
 FROM ${BASE_IMAGE}
-
-ENV PATH=/opt/devkitpro/devkitA64/bin:${PATH}
 
 # Meson >= 1.4 from pip (Debian's is 1.0). Ruby (as baseruby) and bison are
 # needed to build the Ruby subproject from its git tag tarball.

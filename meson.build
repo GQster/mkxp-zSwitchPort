@@ -185,7 +185,7 @@ libmkxp = static_library(
     override_options: {'c_std': c_std, 'cpp_std': cpp_std},
 )
 
-executable(
+mkxpz_exe = executable(
     exe_name,
     sources: [
         git_hash_file, # Dummy source file just so that Meson doesn't complain about the executable not having any sources
@@ -201,6 +201,10 @@ executable(
     install_dir: '.',
     install_tag: meson.project_name(),
 )
+
+if host_system == 'switch'
+    subdir('switch/nro')
+endif
 
 global_install_tags = [meson.project_name()]
 if host_system == 'darwin'

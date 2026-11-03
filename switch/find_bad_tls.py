@@ -46,3 +46,5 @@ print(f'thread-pointer calls: {total_tp}')
 print(f'functions with bad lsl-after-read_tp: {len(counts)}')
 for name, n in counts.most_common():
     print(f'{n:5d}  {name}  e.g. {", ".join(samples[name])}')
+
+sys.exit(1 if counts else 0)

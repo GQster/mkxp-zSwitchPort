@@ -97,20 +97,6 @@ endif
 meson.add_dist_script(python, files('../distscript.py'), get_option('dist_subprojects'), distscript_vcs_command)
 global_dependencies += declare_dependency(sources: git_hash_file)
 
-# Nintendo Switch: dependencies come from devkitPro's portlibs where possible
-# (see switch/buildScripts/build_mkxpz_switch.sh)
-if host_system == 'switch'
-    # There is no gl.pc; the GL headers are in portlibs and gl-fun.cpp loads
-    # the functions through SDL
-    meson.override_dependency('gl', declare_dependency())
-
-    # The portlibs .pc files are named SDL2_ttf/SDL2_image. (As an internal
-    # dependency, SDL_ttf's font type is taken to be _TTF_Font, which it is
-    # in portlibs; the TTF_Font compile test below can't tell the two apart.)
-    meson.override_dependency('sdl2_ttf', declare_dependency(dependencies: dependency('SDL2_ttf')))
-    meson.override_dependency('sdl2_image', dependency('SDL2_image'))
-endif
-
 gl = dependency('gl', allow_fallback: false, required: get_option('gl_system').disable_auto_if(default_system_disabled).enable_auto_if(default_system_enabled))
 if not gl.found()
     gl = subproject('mesa', default_options: meson_base_options).get_variable('gl')
@@ -1052,6 +1038,7 @@ if not sdl2_image.found()
         'CMAKE_C_FLAGS': run_command(quotetool, sdl2_image_internal_cflags + sdl2_image_external_cflags, check: true).stdout().strip(),
         'CMAKE_CXX_FLAGS': run_command(quotetool, sdl2_image_internal_cflags + sdl2_image_external_cflags, check: true).stdout().strip(),
         'BUILD_SHARED_LIBS': false,
+        'BUILD_TESTING': false,
         'SDL2IMAGE_JPG_SAVE': true,
         'SDL2IMAGE_PNG_SAVE': true,
         'SDL2IMAGE_PNG_SHARED': false,
