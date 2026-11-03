@@ -9,7 +9,7 @@
 ARG BASE_IMAGE=devkitpro/devkita64:20251117
 FROM ${BASE_IMAGE}
 
-# Meson >= 1.4 from pip (Debian's is 1.0). Ruby (as baseruby) and bison are
+# The latest Meson from pip, as in CI (Debian's is 1.0). Ruby (as baseruby) and bison are
 # needed to build the Ruby subproject from its git tag tarball.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bison \
@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     python3-pip \
     ruby \
- && pip3 install --break-system-packages meson==1.10.2 \
+ && pip3 install --break-system-packages meson \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
