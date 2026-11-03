@@ -789,6 +789,8 @@ jobs:
           # The Meson version provided by APT is too old so we install Meson using pip instead
           apt install -y python3-pip
           pip3 install --break-system-packages meson
+          # For the host-side unit tests (switch/tests)
+          apt install -y g++ libsdl2-dev pkg-config
 
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -800,6 +802,10 @@ jobs:
       - name: Build
         run: |
           CLICOLOR_FORCE=1 ninja -C build -v
+
+      - name: Test
+        run: |
+          meson test -C build --print-errorlogs
 
       - name: Check for miscompiled thread-local accesses
         run: |

@@ -13,6 +13,9 @@ FROM ${BASE_IMAGE}
 # needed to build the Ruby subproject from its git tag tarball.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bison \
+    g++ \
+    libsdl2-dev \
+    pkg-config \
     python3-pip \
     ruby \
  && pip3 install --break-system-packages meson==1.10.2 \

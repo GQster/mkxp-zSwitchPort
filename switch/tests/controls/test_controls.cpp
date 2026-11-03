@@ -1,5 +1,5 @@
 // Host-side tests for switch/switch_controls.cpp (no libnx needed).
-// Run: bash switch/tests/controls/run.sh
+// Run: meson test -C build controls (switch/tests/controls/meson.build)
 
 #include "switch_controls.h"
 

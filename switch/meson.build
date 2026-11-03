@@ -8,3 +8,5 @@ global_sources += files(
     'switch_swkbd.cpp',
 )
 global_include_dirs += include_directories('.')
+
+subdir('tests/controls')

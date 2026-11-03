@@ -13,7 +13,11 @@ image), Meson, CMake, Ruby and bison:
 ```bash
 meson setup --cross-file switch/switch.ini --buildtype release build
 ninja -C build          # build/switch/nro/mkxp-z.nro
+meson test -C build     # unit tests, run on the build machine
 ```
+
+The tests (`switch/tests/`) need a native C++ compiler and SDL2's development
+files (e.g. `g++ libsdl2-dev pkg-config`); without them they're skipped.
 
 `switch/switch.ini` takes SDL2 and OpenAL from devkitPro's portlibs, since
 they use the system APIs; everything else comes from mkxp-z's subprojects, as
@@ -23,12 +27,12 @@ each behind `__SWITCH__`. `switch/nro/` packages the executable as a `.nro`
 with a RomFS made of `switch/romfs-root/` and `scripts/preload/win32_wrap.rb`.
 
 To build in Docker, start a shell in devkitPro's image, install the same
-packages as the CI job (`.github/workflows/autobuild.yml`), then run the two
+packages as the CI job (`.github/workflows/autobuild.yml`), then run the
 commands above:
 
 ```bash
 docker run --rm -it -v "$PWD":/src -w /src devkitpro/devkita64:20251117 bash
-apt update && apt install -y bison git ruby python3-pip
+apt update && apt install -y bison git ruby python3-pip g++ libsdl2-dev pkg-config
 pip3 install --break-system-packages meson
 ```
 
