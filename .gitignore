@@ -77,6 +77,5 @@ DerivedData/
 ## Gcc Patch
 /*.gcno
 
-# Nintendo Switch (switch/README.md)
-/build-switch
+# Local test games for the Switch port
 /testGames

@@ -22,8 +22,15 @@ on other platforms. Ruby and PhysFS get small Switch patches
 each behind `__SWITCH__`. `switch/nro/` packages the executable as a `.nro`
 with a RomFS made of `switch/romfs-root/` and `scripts/preload/win32_wrap.rb`.
 
-`switch/Dockerfile` is an optional local build environment with the same
-packages as the CI job; its header shows how to use it.
+To build in Docker, start a shell in devkitPro's image, install the same
+packages as the CI job (`.github/workflows/autobuild.yml`), then run the two
+commands above:
+
+```bash
+docker run --rm -it -v "$PWD":/src -w /src devkitpro/devkita64:20251117 bash
+apt update && apt install -y bison git ruby python3-pip
+pip3 install --break-system-packages meson
+```
 
 `switch/find_bad_tls.py` checks a disassembly of the ELF for devkitA64's
 soft-TLS miscompile, which the cross file avoids with `-ftls-model=local-exec`

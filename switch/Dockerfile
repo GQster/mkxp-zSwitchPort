@@ -1,4 +1,5 @@
-# Optional local build environment for the Switch port, with the same
+# Personal local build environment for the Switch port (not part of the
+# upstream branch), with the same
 # packages the CI job (.github/workflows/autobuild.yml) installs:
 #
 #   docker build -t mkxp-z-switch switch
