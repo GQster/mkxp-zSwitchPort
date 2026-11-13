@@ -1,0 +1,55 @@
+mkxp-z Switch port — round 6 TLS audit summary (2026-10-28)
+==========================================================
+
+Bug pattern
+-----------
+devkitA64 miscompiles thread-local accesses when a TU is built with
+-fPIC + -mtp=soft. Instead of `add xN, tp, #offset` it emits
+`lsl xN, tp, #1`. Any TLS access through that pointer reads/writes
+arbitrary memory and can data-abort (2168-0002 0x4A8).
+
+Checker: switch/buildScripts/find_bad_tls.py <objdump -d listing>
+It reports calls to __aarch64_read_tp followed within four instructions
+by `lsl xN, x0, #1`.
+
+Before the fix (devkitPro prebuilt pixman 0.42.2)
+-------------------------------------------------
+The linked NRO contained 11 bad sites, all in:
+
+  _pixman_implementation_lookup_composite
+
+Example (old ELF):
+  6eb678: bl   115bd4 <__aarch64_read_tp>
+  6eb67c: lsl  x0, x0, #1
+  6eb6a8: lsl  x0, x0, #1   (next call)
+  6eb6bc: lsl  x0, x0, #1
+
+The same pattern caused the round-5 FluidSynth shutdown crash in
+fluid_private_free. mkxp-z only calls pixman region functions today,
+so the composite path was latent, not yet executed.
+
+Fix
+---
+pixman 0.42.2 rebuilt from the official tarball
+(sha256 ea1480efada2fd948bc75366f7c349e1c96d3297d09a3fe62626e38e234a625e)
+with -fPIE, via a meson cross file derived from
+/opt/devkitpro/meson-toolchain.sh switch with -fPIC replaced by -fPIE.
+
+  archive: libs/pixman-switch/lib/libpixman-1.a
+  size:    982,532 bytes
+  sha256:  ffe4764bfca49423405930a6d550fcc731a905eeb36e25751e079b2ed0275b3f
+  meson options: -Dtests=disabled -Dgtk=disabled -Dopenmp=disabled
+                 -Dlibpng=disabled
+
+Audit of the rebuilt archive:
+  thread-pointer calls: 3
+  functions with bad lsl-after-read_tp: 0
+
+Audit of the final linked ELF (build-switch/mkxp-z, 49,765,816 bytes):
+  thread-pointer calls: 4,292
+  functions with bad lsl-after-read_tp: 0
+
+New NRO:
+  build-switch/mkxp-z.nro
+  size:   22,263,476 bytes
+  sha256: 88ceb6de2ac7ea2554c37224b545fda5398f3e010749a464a9f709b3c45189f1

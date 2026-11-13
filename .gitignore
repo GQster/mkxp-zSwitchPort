@@ -76,3 +76,6 @@ DerivedData/
 
 ## Gcc Patch
 /*.gcno
+
+# Local test games for the Switch port
+/testGames
